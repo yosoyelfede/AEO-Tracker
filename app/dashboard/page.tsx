@@ -44,7 +44,7 @@ export default function Dashboard() {
 
   const models = [
     { id: 'chatgpt', name: 'ChatGPT', icon: '🤖', available: true },
-    { id: 'claude', name: 'Claude', icon: '🧠', available: false, reason: 'Insufficient credits' },
+    { id: 'claude', name: 'Claude', icon: '🧠', available: true },
     { id: 'gemini', name: 'Gemini', icon: '💎', available: true },
     { id: 'perplexity', name: 'Perplexity', icon: '🔍', available: true }
   ]
@@ -95,6 +95,10 @@ export default function Dashboard() {
     setSelectedHistoricalQuery(null) // Clear any historical results
 
     try {
+      console.log('🚀 Starting query with models:', selectedModels)
+      console.log('🚀 Query text:', currentQuery)
+      console.log('🚀 Selected brands:', selectedBrandNames)
+      
       const response = await fetch('/api/run-query', {
         method: 'POST',
         headers: {
@@ -109,9 +113,13 @@ export default function Dashboard() {
         }),
       })
 
+      console.log('🚀 API response status:', response.status)
+      console.log('🚀 API response headers:', Object.fromEntries(response.headers.entries()))
+
       // Check if response is ok first
       if (!response.ok) {
         const errorText = await response.text()
+        console.error('❌ API error response:', errorText)
         throw new Error(`API request failed (${response.status}): ${errorText}`)
       }
 
@@ -119,6 +127,7 @@ export default function Dashboard() {
       const contentType = response.headers.get('content-type')
       if (!contentType || !contentType.includes('application/json')) {
         const responseText = await response.text()
+        console.error('❌ Unexpected content type:', contentType, 'Response:', responseText)
         throw new Error(`Expected JSON response but got: ${contentType}. Response: ${responseText}`)
       }
 
@@ -147,11 +156,21 @@ export default function Dashboard() {
           })
 
         console.log('🔍 Transformed results:', transformedResults) // Debug log
+        
+        if (transformedResults.length === 0) {
+          console.warn('⚠️ No successful results found after filtering')
+          alert('No successful results were returned. Please check the console for more details.')
+        }
+        
         setResults(transformedResults)
         fetchQueries() // Refresh the queries list
         
         // Trigger analytics refresh
-        setAnalyticsRefreshTrigger(prev => prev + 1)
+        setAnalyticsRefreshTrigger(prev => {
+          const next = prev + 1;
+          console.log('Analytics refresh trigger incremented:', next);
+          return next;
+        })
 
         // Show message about API key usage
         const usedUserKeys = transformedResults.some((r: any) => r.api_key_source === 'user')
@@ -362,9 +381,6 @@ export default function Dashboard() {
                         >
                           <div className="text-2xl mb-1">{model.icon}</div>
                           <div className="font-medium text-sm">{model.name}</div>
-                          {!model.available && model.reason && (
-                            <div className="text-xs text-red-600 mt-1">{model.reason}</div>
-                          )}
                         </button>
                       </div>
                     ))}

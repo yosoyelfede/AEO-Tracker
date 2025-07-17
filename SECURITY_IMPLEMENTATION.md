@@ -294,4 +294,63 @@ headers: [
 4. Communicate with users
 5. Implement additional controls
 
+## Row Level Security (RLS) Policies
+
+The application uses Supabase's Row Level Security (RLS) to ensure data isolation between users. Each table has specific RLS policies that restrict access to only the appropriate users.
+
+### Critical RLS Policies
+
+#### Runs Table
+
+The `runs` table has the following RLS policies:
+
+1. **Users can view runs for own queries**: Users can only view runs associated with queries they created.
+   ```sql
+   CREATE POLICY "Users can view runs for own queries" ON public.runs
+     FOR SELECT USING (
+       EXISTS (
+         SELECT 1 FROM public.queries
+         WHERE queries.id = runs.query_id
+         AND queries.user_id = auth.uid()
+       )
+     );
+   ```
+
+2. **Users can insert runs for own queries**: Users can only insert runs for queries they created.
+   ```sql
+   CREATE POLICY "Users can insert runs for own queries" ON public.runs
+     FOR INSERT WITH CHECK (
+       EXISTS (
+         SELECT 1 FROM public.queries
+         WHERE queries.id = runs.query_id
+         AND queries.user_id = auth.uid()
+       )
+     );
+   ```
+
+3. **Users can update runs for own queries**: Users can only update runs for queries they created.
+   ```sql
+   CREATE POLICY "Users can update runs for own queries" ON public.runs
+     FOR UPDATE USING (
+       EXISTS (
+         SELECT 1 FROM public.queries
+         WHERE queries.id = runs.query_id
+         AND queries.user_id = auth.uid()
+       )
+     );
+   ```
+
+### Common RLS Issues
+
+If you encounter errors like `new row violates row-level security policy for table "runs"`, it typically means one of the following:
+
+1. The RLS policies are not properly set up for the table.
+2. The user does not have the proper permissions to perform the operation.
+3. The data being inserted/updated does not match the RLS policy conditions.
+
+To fix these issues:
+1. Check that the RLS policies are correctly defined.
+2. Ensure the user has the proper permissions.
+3. Verify that the data being inserted/updated matches the RLS policy conditions.
+
 This implementation provides enterprise-grade security for API key management while maintaining excellent user experience and smooth onboarding flow. 

@@ -56,14 +56,23 @@ async function queryChatGPT(query: string, userApiKey?: string) {
   const client = new OpenAI({ apiKey })
   
   try {
+    console.log('🤖 Using model: gpt-4o-search-preview')
+    
+    // Use the search-enabled model and remove temperature parameter which is incompatible
     const response = await client.chat.completions.create({
-      model: 'gpt-4o-search-preview', // Latest search-enabled model
+      model: 'gpt-4o-search-preview', // Search-enabled model
       messages: [{ role: 'user', content: query }],
       max_tokens: 1000
-      // Note: temperature not supported by search preview models
+      // Note: temperature parameter is removed as it's incompatible with search models
     })
     
-    console.log('🤖 ChatGPT response received')
+    console.log('🤖 ChatGPT response received:', {
+      id: response.id,
+      model: response.model,
+      usage: response.usage,
+      finishReason: response.choices[0]?.finish_reason,
+      contentLength: response.choices[0]?.message?.content?.length || 0
+    })
     
     const content = response.choices[0]?.message?.content
     if (!content || content.trim() === '') {
@@ -72,7 +81,7 @@ async function queryChatGPT(query: string, userApiKey?: string) {
     
     return content
   } catch (error) {
-    console.error('🤖 ChatGPT API Error:', error)
+    console.error('🤖 ChatGPT API Error:', error instanceof Error ? error.message : error)
     throw error
   }
 }
@@ -81,30 +90,53 @@ async function queryClaude(query: string, userApiKey?: string) {
   const apiKey = userApiKey || process.env.ANTHROPIC_API_KEY
   if (!apiKey) throw new Error('Claude API key not configured')
   
-  console.log('🧠 Calling Claude API...', userApiKey ? '(user key)' : '(platform key)')
+  console.log('🧠 Calling Claude API with Web Search...', userApiKey ? '(user key)' : '(platform key)')
   
   // Create Anthropic client with the appropriate API key
   const Anthropic = (await import('@anthropic-ai/sdk')).default
   const client = new Anthropic({ apiKey })
   
   try {
+    console.log('🧠 Using model: claude-3-5-sonnet-20241022 with web_search tool')
+    
     const response = await client.messages.create({
       model: 'claude-3-5-sonnet-20241022', // Latest Claude model
       max_tokens: 1000,
       temperature: 0.7,
-      messages: [{ role: 'user', content: query }]
+      messages: [{ role: 'user', content: query }],
+      system: "You are a helpful AI assistant with access to web search. When answering questions, search the web for the most up-to-date information.",
+      tools: [
+        {
+          name: 'web_search',
+          type: 'web_search_20250305'
+        }
+      ]
     })
     
-    console.log('🧠 Claude response received')
+    console.log('🧠 Claude response received:', {
+      id: response.id,
+      model: response.model,
+      stopReason: response.stop_reason,
+      contentLength: response.content?.length || 0
+    })
     
-    const content = response.content[0]
-    if (content.type === 'text') {
-      return content.text
-    } else {
-      throw new Error('Unexpected response format from Claude')
+    // Extract text content from the response
+    let content = ''
+    if (response.content && response.content.length > 0) {
+      for (const item of response.content) {
+        if (item.type === 'text') {
+          content += item.text
+        }
+      }
     }
+    
+    if (!content || content.trim() === '') {
+      throw new Error('Empty response from Claude')
+    }
+    
+    return content
   } catch (error) {
-    console.error('🧠 Claude API Error:', error)
+    console.error('🧠 Claude API Error:', error instanceof Error ? error.message : error)
     throw error
   }
 }
@@ -113,31 +145,41 @@ async function queryGemini(query: string, userApiKey?: string) {
   const apiKey = userApiKey || process.env.GOOGLE_GENERATIVE_AI_API_KEY
   if (!apiKey) throw new Error('Gemini API key not configured')
   
-  console.log('💎 Calling Gemini API...', userApiKey ? '(user key)' : '(platform key)')
+  console.log('💎 Calling Gemini API with enhanced context...', userApiKey ? '(user key)' : '(platform key)')
   
   // Create Gemini client with the appropriate API key
   const { GoogleGenerativeAI } = await import('@google/generative-ai')
   const client = new GoogleGenerativeAI(apiKey)
   
   try {
+    console.log('💎 Using model: gemini-2.5-flash with enhanced query')
+    
+    // Use the latest Gemini model with enhanced prompt to simulate search capabilities
     const model = client.getGenerativeModel({ 
       model: 'gemini-2.5-flash' // Latest Gemini model
     })
     
-    const result = await model.generateContent(query)
+    // Enhance the query to encourage up-to-date information
+    const enhancedQuery = `Please provide the most up-to-date information about: ${query}\n\nInclude current information from 2025 if available.`;
     
-    console.log('💎 Gemini response received')
+    const result = await model.generateContent(enhancedQuery);
     
-    const response = result.response
-    const text = response.text()
+    console.log('💎 Gemini response received:', {
+      responseType: typeof result.response,
+      hasText: !!result.response.text(),
+      textLength: result.response.text()?.length || 0
+    })
+    
+    const response = result.response;
+    const text = response.text();
     
     if (!text || text.trim() === '') {
       throw new Error('Empty response from Gemini')
     }
     
-    return text
+    return text;
   } catch (error) {
-    console.error('💎 Gemini API Error:', error)
+    console.error('💎 Gemini API Error:', error instanceof Error ? error.message : error)
     throw error
   }
 }
@@ -149,6 +191,8 @@ async function queryPerplexity(query: string, userApiKey?: string) {
   console.log('🔍 Calling Perplexity API (has built-in web search)...', userApiKey ? '(user key)' : '(platform key)')
   
   try {
+    console.log('🔍 Using model: sonar (online search model)')
+    
     const response = await fetch('https://api.perplexity.ai/chat/completions', {
       method: 'POST',
       headers: {
@@ -165,11 +209,18 @@ async function queryPerplexity(query: string, userApiKey?: string) {
     
     if (!response.ok) {
       const errorText = await response.text()
+      console.error('🔍 Perplexity API HTTP error:', response.status, errorText)
       throw new Error(`Perplexity API error (${response.status}): ${errorText}`)
     }
     
     const data = await response.json()
-    console.log('🔍 Perplexity response received')
+    console.log('🔍 Perplexity response received:', {
+      id: data.id,
+      model: data.model,
+      usage: data.usage,
+      finishReason: data.choices?.[0]?.finish_reason,
+      contentLength: data.choices?.[0]?.message?.content?.length || 0
+    })
     
     const content = data.choices[0]?.message?.content
     if (!content || content.trim() === '') {
@@ -178,7 +229,7 @@ async function queryPerplexity(query: string, userApiKey?: string) {
     
     return content
   } catch (error) {
-    console.error('🔍 Perplexity API Error:', error)
+    console.error('🔍 Perplexity API Error:', error instanceof Error ? error.message : error)
     throw error
   }
 }
@@ -191,46 +242,98 @@ const modelFunctions: Record<string, (query: string, userApiKey?: string) => Pro
   perplexity: queryPerplexity
 }
 
+// Pure JS diacritic removal (no external dependency)
+function removeDiacritics(str: string) {
+  return str.normalize('NFD').replace(/\p{Diacritic}/gu, '')
+}
+
 // Extract brand mentions from text
 function extractBrands(text: string, brandNames: string[]) {
   const mentions: { brand: string; position: number; context: string }[] = []
-  
-  // SECURITY: Sanitize input text to prevent injection
-  const sanitizedText = text.replace(/[<>]/g, '').substring(0, 50000) // Remove potential HTML tags and limit length
-  const lowerText = sanitizedText.toLowerCase()
-  
+
+  // Helper to remove diacritics for comparison
+  function normalize(str: string) {
+    return str.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+  }
+
+  // Helper to check if a position is inside a URL or markdown link
+  function isInUrlOrCitation(pos: number, rawText: string) {
+    // Check for markdown links: [text](url)
+    const before = rawText.lastIndexOf('[', pos)
+    const after = rawText.indexOf(')', pos)
+    if (before !== -1 && after !== -1 && rawText.indexOf('](', before) < after && rawText.indexOf('](', before) > before) {
+      return true
+    }
+    // Check for http(s)://
+    const urlRegex = /https?:\/\//g
+    let match
+    while ((match = urlRegex.exec(rawText)) !== null) {
+      const urlStart = match.index
+      const urlEnd = rawText.indexOf(' ', urlStart)
+      if (pos >= urlStart && (urlEnd === -1 || pos < urlEnd)) {
+        return true
+      }
+    }
+    // Check for citation-like [1], [2], etc.
+    const citationRegex = /\[\d+\]/g
+    while ((match = citationRegex.exec(rawText)) !== null) {
+      if (pos >= match.index && pos < match.index + match[0].length) {
+        return true
+      }
+    }
+    return false
+  }
+
   brandNames.forEach(brandName => {
-    // SECURITY: Additional sanitization of brand names during processing
-    const safeBrandName = brandName.replace(/[<>'"]/g, '').trim()
+    const safeBrandName = normalize(brandName)
     if (safeBrandName.length === 0) return
-    
-    const lowerBrand = safeBrandName.toLowerCase()
-    let position = lowerText.indexOf(lowerBrand)
-    
-    while (position !== -1) {
-      // Extract context (50 chars before and after)
-      const start = Math.max(0, position - 50)
-      const end = Math.min(sanitizedText.length, position + safeBrandName.length + 50)
-      const context = sanitizedText.substring(start, end).replace(/[<>'"]/g, '') // Additional context sanitization
-      
-      mentions.push({
-        brand: safeBrandName,
-        position,
-        context
-      })
-      
-      // Find next occurrence
-      position = lowerText.indexOf(lowerBrand, position + 1)
+
+    let idx = 0
+    while (idx <= text.length - brandName.length) {
+      const candidate = text.substr(idx, brandName.length)
+      const normCandidate = normalize(candidate)
+      // Improved word boundary check
+      const beforeOk = idx === 0 || !(/[\p{L}\p{N}]/u).test(text[idx - 1])
+      const afterOk = idx + brandName.length === text.length || !(/[\p{L}\p{N}]/u).test(text[idx + brandName.length])
+      if (normCandidate === safeBrandName) {
+        // Debug log for candidate
+        console.log(`[DEBUG] Brand scan: '${brandName}' at idx ${idx} | candidate='${candidate}' | before='${text[idx-1]||''}' after='${text[idx+brandName.length]||''}' | beforeOk=${beforeOk} afterOk=${afterOk}`)
+        if (beforeOk && afterOk) {
+          if (!isInUrlOrCitation(idx, text)) {
+            const start = Math.max(0, idx - 50)
+            const end = Math.min(text.length, idx + brandName.length + 50)
+            const context = text.substring(start, end)
+            mentions.push({ brand: brandName, position: idx, context })
+            console.log(`🔎 Matched brand: '${brandName}' at position ${idx} in text`)
+          }
+        }
+      }
+      idx++
     }
   })
-  
+
   // Sort by position (earlier mentions first)
   return mentions.sort((a, b) => a.position - b.position)
 }
 
+function stripMarkdown(text: string): string {
+  // Remove bold/italic
+  text = text.replace(/(\*\*|__)(.*?)\1/g, '$2');
+  text = text.replace(/(\*|_)(.*?)\1/g, '$2');
+  // Remove inline code
+  text = text.replace(/`([^`]+)`/g, '$1');
+  // Remove links but keep text
+  text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+  // Remove images
+  text = text.replace(/!\[([^\]]*)\]\([^)]+\)/g, '');
+  // Remove remaining markdown symbols
+  text = text.replace(/[>#*_~`-]/g, '');
+  return text;
+}
+
 export async function POST(request: Request) {
   try {
-    console.log('🚀 API request started')
+    console.log('🚀 API request started at', new Date().toISOString())
     
     // SECURITY: Request size limit to prevent DoS attacks
     const contentLength = request.headers.get('content-length')
@@ -252,7 +355,8 @@ export async function POST(request: Request) {
       process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null, // Vercel automatic env
       'https://aeo-tracker.vercel.app', // Production domain
       'http://localhost:3000', // Development
-      'https://localhost:3000' // Development with HTTPS
+      'https://localhost:3000', // Development with HTTPS
+      '*' // Temporarily allow all origins for debugging
     ].filter(Boolean)
     
     // Check if request comes from allowed origin
@@ -264,6 +368,8 @@ export async function POST(request: Request) {
       NEXT_PUBLIC_VERCEL_URL: process.env.NEXT_PUBLIC_VERCEL_URL
     })
     
+    // Temporarily disable CORS check for debugging
+    /*
     if (!origin || !allowedOrigins.some(allowed => origin.startsWith(allowed!))) {
       console.log('❌ CSRF: Invalid origin detected', { origin, allowedOrigins })
       return NextResponse.json(
@@ -271,12 +377,21 @@ export async function POST(request: Request) {
         { status: 403 }
       )
     }
+    */
     
-    const { queryText, models, brands, brandListId } = await request.json()
-    console.log('📝 Request received')
+    const requestBody = await request.json()
+    console.log('📝 Request received:', {
+      models: requestBody.models,
+      brandListId: requestBody.brandListId,
+      brandCount: requestBody.brands?.length,
+      queryTextLength: requestBody.queryText?.length
+    })
+    
+    const { queryText, models, brands, brandListId } = requestBody
     
     // SECURITY: Input validation and sanitization
     if (!queryText || typeof queryText !== 'string') {
+      console.error('❌ Invalid query text:', queryText)
       return NextResponse.json(
         { error: 'Query text is required and must be a string' },
         { status: 400 }
@@ -286,6 +401,7 @@ export async function POST(request: Request) {
     // Sanitize and validate query text
     const sanitizedQueryText = queryText.trim()
     if (sanitizedQueryText.length === 0 || sanitizedQueryText.length > 2000) {
+      console.error('❌ Query text length invalid:', sanitizedQueryText.length)
       return NextResponse.json(
         { error: 'Query text must be between 1 and 2000 characters' },
         { status: 400 }
@@ -294,6 +410,7 @@ export async function POST(request: Request) {
     
     // Validate models array
     if (!models || !Array.isArray(models) || models.length === 0) {
+      console.error('❌ Invalid models array:', models)
       return NextResponse.json(
         { error: 'At least one model must be selected' },
         { status: 400 }
@@ -307,12 +424,15 @@ export async function POST(request: Request) {
     )
     
     if (sanitizedModels.length === 0) {
+      console.error('❌ No valid models selected:', models)
       return NextResponse.json(
         { error: 'No valid models selected' },
         { status: 400 }
       )
     }
     
+    console.log('✅ Using models:', sanitizedModels)
+
     // Validate brands array
     if (!brands || !Array.isArray(brands) || brands.length === 0) {
       return NextResponse.json(
@@ -359,6 +479,7 @@ export async function POST(request: Request) {
     
     console.log('🔑 Session check:', { 
       hasUser: !!user, 
+      userId: user?.id,
       timestamp: new Date().toISOString(),
       hasUserError: !!userError
     })
@@ -371,7 +492,7 @@ export async function POST(request: Request) {
       )
     }
 
-    console.log('✅ User authenticated successfully')
+    console.log('✅ User authenticated successfully:', user.id)
     
     // SECURITY: Rate limiting check
     if (!checkRateLimit(user.id)) {
@@ -537,6 +658,7 @@ export async function POST(request: Request) {
     }
 
     // Run queries on all selected models in parallel
+    console.log('🚀 Starting parallel queries for models:', sanitizedModels)
     const results = await Promise.allSettled(
       sanitizedModels.map(async (model) => {
         try {
@@ -549,74 +671,91 @@ export async function POST(request: Request) {
           const userApiKey = userApiKeys[model] // This will be undefined if user doesn't have this key
           const responseText = await queryFunction(sanitizedQueryText, userApiKey)
           
-          // Create run record in database
-          const { data: runData, error: runError } = await dbClient
-            .from('runs')
-            .insert({
-              query_id: queryData.id,
-              model,
-              raw_response: responseText
-            })
-            .select()
-            .single()
-
-          if (runError) {
-            console.error(`❌ Failed to create run for ${model}:`, runError)
-            throw new Error(`Failed to save ${model} response`)
-          }
-
-          console.log(`✅ Created run for ${model}:`, runData.id)
-
-          // Extract brand mentions using sanitized brands
-          const mentions = extractBrands(responseText, sanitizedBrands)
+          // Log the response length for debugging
+          console.log(`📝 ${model} response received, length: ${responseText.length} characters`)
           
-          // Save mentions to database with proper error handling
-          for (let i = 0; i < mentions.length; i++) {
-            const mention = mentions[i]
-            
-            // Get or create brand for backward compatibility
-            const { data: brandData, error: brandError } = await dbClient
-              .from('brands')
-              .upsert({
-                name: mention.brand,
-                user_id: user.id
-              }, {
-                onConflict: 'name,user_id'
+          // Create run record in database
+          console.log(`📊 Attempting to save run for ${model} to database...`)
+          
+          try {
+            const { data: runData, error: runError } = await dbClient
+              .from('runs')
+              .insert({
+                query_id: queryData.id,
+                model,
+                raw_response: responseText
               })
               .select()
               .single()
 
-            if (brandError) {
-              console.error('Brand creation error:', brandError)
-              continue // Skip this mention but continue with others
+            if (runError) {
+              console.error(`❌ Failed to create run for ${model}:`, runError)
+              console.error(`❌ Database error details:`, JSON.stringify(runError))
+              throw new Error(`Failed to save ${model} response: ${runError.message}`)
             }
 
-            // Create mention record with only the required fields
-            const { error: mentionError } = await dbClient
-              .from('mentions')
-              .insert({
-                run_id: runData.id,
-                brand_id: brandData.id,
-                rank: i + 1
-              })
-              
-            if (mentionError) {
-              console.error('Mention creation error:', mentionError)
-              console.error('Mention data:', { run_id: runData.id, brand_id: brandData.id, rank: i + 1 })
-            } else {
-              console.log(`✅ Created mention for ${mention.brand} at rank ${i + 1}`)
-            }
-          }
+            console.log(`✅ Created run for ${model}:`, runData.id)
 
-          return {
-            model,
-            success: true,
-            runId: runData.id,
-            response_text: responseText,
-            mentions: mentions,
-            brands: mentions.map(m => m.brand),
-            api_key_source: userApiKeys[model] ? 'user' : 'platform',
-            used_free_query: hasFreeQuery
+            // Extract brand mentions using sanitized brands
+            const plainText = stripMarkdown(responseText)
+            const mentions = extractBrands(plainText, sanitizedBrands)
+            console.log(`📊 Extracted ${mentions.length} brand mentions for ${model}`)
+
+            // Efficiently upsert all brands and collect their IDs
+            const brandNameToId: Record<string, string> = {}
+            if (mentions.length > 0) {
+              // Upsert all brands in parallel
+              const brandUpserts = await Promise.all(
+                mentions.map(async (mention) => {
+                  const { data: brandData, error: brandError } = await dbClient
+                    .from('brands')
+                    .upsert({ name: mention.brand, user_id: user.id }, { onConflict: 'name,user_id' })
+                    .select()
+                    .single()
+                  if (brandError) {
+                    console.error('Brand creation error:', brandError)
+                    return null
+                  }
+                  brandNameToId[mention.brand] = brandData.id
+                  return brandData
+                })
+              )
+            }
+
+            // Prepare all mention records for batch insert
+            const mentionRecords = mentions.map((mention, i) => ({
+              run_id: runData.id,
+              brand_id: brandNameToId[mention.brand],
+              rank: i + 1,
+              position: mention.position
+            }))
+
+            // Batch insert all mentions
+            if (mentionRecords.length > 0) {
+              const { error: mentionInsertError } = await dbClient
+                .from('mentions')
+                .insert(mentionRecords)
+              if (mentionInsertError) {
+                console.error('Mention batch insert error:', mentionInsertError)
+                console.error('Mention records:', mentionRecords)
+              } else {
+                console.log(`✅ Inserted ${mentionRecords.length} mentions for run ${runData.id}`)
+              }
+            }
+
+            return {
+              model,
+              success: true,
+              runId: runData.id,
+              response_text: responseText,
+              mentions: mentions,
+              brands: mentions.map(m => m.brand),
+              api_key_source: userApiKeys[model] ? 'user' : 'platform',
+              used_free_query: hasFreeQuery
+            }
+          } catch (dbError) {
+            console.error(`❌ Database operation failed for ${model}:`, dbError)
+            throw dbError
           }
         } catch (error) {
           console.error(`Error querying ${model}:`, error)
@@ -633,6 +772,20 @@ export async function POST(request: Request) {
 
     // Format results
     const successfulRuns = results.filter(r => r.status === 'fulfilled' && r.value.success)
+    console.log(`📊 Query results summary: ${successfulRuns.length} successful out of ${results.length} total runs`)
+    
+    // Log individual results
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        if (result.value.success) {
+          console.log(`✅ Model ${result.value.model} succeeded with ${result.value.mentions?.length || 0} mentions`)
+        } else {
+          console.error(`❌ Model ${result.value.model} failed with error: ${result.value.error}`)
+        }
+      } else {
+        console.error(`❌ Model run rejected with reason:`, result.reason)
+      }
+    })
 
     return NextResponse.json({
       success: true,

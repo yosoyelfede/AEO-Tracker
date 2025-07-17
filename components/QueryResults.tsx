@@ -166,11 +166,24 @@ export function QueryResults({ results, queryText, isHistorical = false, onClear
                   <div className="mb-4 p-3 bg-muted rounded-lg">
                     <p className="text-sm font-medium mb-2">Detected Brands:</p>
                     <div className="flex flex-wrap gap-1">
-                      {result.mentions.map((mention, index) => (
-                        <Badge key={index} variant="outline" className="text-xs">
-                          #{index + 1} {mention.brand}
-                        </Badge>
-                      ))}
+                      {/* Group mentions by brand, order by first appearance */}
+                      {(() => {
+                        const brandOrder: { brand: string, firstIdx: number, count: number }[] = [];
+                        result.mentions.forEach((mention, idx) => {
+                          const found = brandOrder.find(b => b.brand === mention.brand);
+                          if (found) {
+                            found.count++;
+                          } else {
+                            brandOrder.push({ brand: mention.brand, firstIdx: idx, count: 1 });
+                          }
+                        });
+                        brandOrder.sort((a, b) => a.firstIdx - b.firstIdx);
+                        return brandOrder.map((b, i) => (
+                          <Badge key={b.brand} variant="outline" className="text-xs">
+                            #{i + 1} {b.brand} ({b.count} mention{b.count > 1 ? 's' : ''})
+                          </Badge>
+                        ));
+                      })()}
                     </div>
                   </div>
                 )}

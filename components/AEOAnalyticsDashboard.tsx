@@ -172,6 +172,7 @@ const MODEL_COLORS = {
 }
 
 export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardProps) {
+  console.log('AEOAnalyticsDashboard rendered with refreshTrigger:', refreshTrigger)
   const { user } = useAuth()
   const [brandLists, setBrandLists] = useState<BrandList[]>([])
   const [selectedBrandListId, setSelectedBrandListId] = useState<string | null>(null)
@@ -287,6 +288,8 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
         console.error('Error fetching analytics data:', error)
         return
       }
+
+      console.log('Fetched queries for analytics:', JSON.stringify(queries, null, 2))
 
       // Process enhanced analytics
       processEnhancedAnalytics(queries || [])
@@ -440,7 +443,7 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
       }
     }).sort((a, b) => b.totalMentions - a.totalMentions)
 
-    setCoreBrandMetrics(coreMetrics)
+    console.log('Processed coreBrandMetrics:', coreMetrics)
 
     // Build Model Performance Metrics
     const modelMetrics: ModelPerformanceMetrics[] = Object.entries(modelStats).map(([model, stats]) => {
@@ -472,7 +475,7 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
       }
     }).sort((a, b) => b.totalMentions - a.totalMentions)
 
-    setModelPerformance(modelMetrics)
+    console.log('Processed modelPerformance:', modelMetrics)
 
     // Build Query Effectiveness Metrics
     const queryMetrics: QueryEffectivenessMetrics[] = Object.entries(queryStats).map(([queryId, stats]) => {
@@ -492,6 +495,10 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
       }
     }).sort((a, b) => b.effectivenessScore - a.effectivenessScore)
 
+    console.log('Processed queryEffectiveness:', queryMetrics)
+
+    setCoreBrandMetrics(coreMetrics)
+    setModelPerformance(modelMetrics)
     setQueryEffectiveness(queryMetrics)
 
     // Build Competitive Analysis
