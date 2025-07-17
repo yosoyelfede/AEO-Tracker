@@ -389,7 +389,7 @@ export async function POST(request: Request) {
     const hasFreeQuery = freeQueryCheck || false
     console.log('🆓 Free query check:', { hasFreeQuery, userId: user.id })
 
-    // If no free queries available, check for user API keys
+    // If no free queries available, check for user API keys or use platform keys for admin
     let useUserApiKeys = false
     let userApiKeys: { [key: string]: string } = {}
     
@@ -418,31 +418,48 @@ export async function POST(request: Request) {
         }
       })
 
-      // If user has no API keys for any requested models, return error
-      if (!useUserApiKeys) {
-        console.log('❌ No API keys found for requested models')
+      // Check if platform API keys are available for missing models (for admin users)
+      const platformKeysAvailable: { [key: string]: boolean } = {
+        'chatgpt': !!process.env.OPENAI_API_KEY,
+        'claude': !!process.env.ANTHROPIC_API_KEY,
+        'gemini': !!process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+        'perplexity': !!process.env.PERPLEXITY_API_KEY
+      }
+
+      const platformCoveredModels = missingKeys.filter(model => platformKeysAvailable[model])
+      const stillMissingKeys = missingKeys.filter(model => !platformKeysAvailable[model])
+
+      if (platformCoveredModels.length > 0) {
+        console.log('✅ Platform API keys available for models:', platformCoveredModels)
+      }
+
+      // If user has no API keys AND no platform keys are available, return error
+      if (!useUserApiKeys && stillMissingKeys.length === sanitizedModels.length) {
+        console.log('❌ No API keys found for requested models (user or platform)')
         return NextResponse.json(
           { 
             error: 'API_KEYS_REQUIRED',
             message: 'You have used your free query. Please add API keys for the models you want to use.',
-            missing_providers: missingKeys,
+            missing_providers: stillMissingKeys,
             redirect_to: '/profile?tab=api-keys'
           },
           { status: 402 } // Payment Required
         )
       }
 
-      // If some keys are missing, filter models to only those with keys
-      if (missingKeys.length > 0) {
-        console.log('⚠️ Some API keys missing, filtering models:', missingKeys)
-        // Remove models without API keys from the request
-        const availableModels = sanitizedModels.filter(model => userApiKeys[model])
+      // If some keys are missing, filter models to only those with keys (user or platform)
+      if (stillMissingKeys.length > 0) {
+        console.log('⚠️ Some API keys missing, filtering models:', stillMissingKeys)
+        // Remove models without any API keys (user or platform) from the request
+        const availableModels = sanitizedModels.filter(model => 
+          userApiKeys[model] || platformKeysAvailable[model]
+        )
         if (availableModels.length === 0) {
           return NextResponse.json(
             { 
               error: 'API_KEYS_REQUIRED',
               message: 'No API keys found for the requested models.',
-              missing_providers: missingKeys,
+              missing_providers: stillMissingKeys,
               redirect_to: '/profile?tab=api-keys'
             },
             { status: 402 }
@@ -450,6 +467,7 @@ export async function POST(request: Request) {
         }
         // Update sanitizedModels to only include available ones
         sanitizedModels.splice(0, sanitizedModels.length, ...availableModels)
+        console.log('✅ Using available models:', availableModels)
       }
     }
     
@@ -527,8 +545,8 @@ export async function POST(request: Request) {
             throw new Error(`Unknown model: ${model}`)
           }
           
-          // Use user API key if available, otherwise platform key
-          const userApiKey = useUserApiKeys ? userApiKeys[model] : undefined
+          // Use user API key if available, otherwise platform key (falls back to env vars)
+          const userApiKey = userApiKeys[model] // This will be undefined if user doesn't have this key
           const responseText = await queryFunction(sanitizedQueryText, userApiKey)
           
           // Create run record in database
@@ -597,7 +615,7 @@ export async function POST(request: Request) {
             response_text: responseText,
             mentions: mentions,
             brands: mentions.map(m => m.brand),
-            api_key_source: useUserApiKeys ? 'user' : 'platform',
+            api_key_source: userApiKeys[model] ? 'user' : 'platform',
             used_free_query: hasFreeQuery
           }
         } catch (error) {
