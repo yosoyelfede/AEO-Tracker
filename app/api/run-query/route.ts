@@ -145,33 +145,38 @@ async function queryGemini(query: string, userApiKey?: string) {
   const apiKey = userApiKey || process.env.GOOGLE_GENERATIVE_AI_API_KEY
   if (!apiKey) throw new Error('Gemini API key not configured')
   
-  console.log('💎 Calling Gemini API with enhanced context...', userApiKey ? '(user key)' : '(platform key)')
-  
-  // Create Gemini client with the appropriate API key
-  const { GoogleGenerativeAI } = await import('@google/generative-ai')
-  const client = new GoogleGenerativeAI(apiKey)
+  console.log('💎 Calling Gemini API with Web Search...', userApiKey ? '(user key)' : '(platform key)')
   
   try {
-    console.log('💎 Using model: gemini-2.5-flash with enhanced query')
+    console.log('💎 Using model: gemini-2.0-flash-exp with web search')
     
-    // Use the latest Gemini model with enhanced prompt to simulate search capabilities
-    const model = client.getGenerativeModel({ 
-      model: 'gemini-2.5-flash' // Latest Gemini model
-    })
+    // Use the new @google/genai library
+    const { GoogleGenAI } = await import('@google/genai')
+    const genAI = new GoogleGenAI({ apiKey })
     
-    // Enhance the query to encourage up-to-date information
-    const enhancedQuery = `Please provide the most up-to-date information about: ${query}\n\nInclude current information from 2025 if available.`;
-    
-    const result = await model.generateContent(enhancedQuery);
+    // Create content with web search enabled
+    const result = await genAI.models.generateContent({
+      model: 'gemini-2.0-flash-exp',
+      contents: query,
+      config: {
+        temperature: 0.7,
+        maxOutputTokens: 1000,
+        tools: [
+          {
+            googleSearch: {}
+          }
+        ]
+      }
+    });
     
     console.log('💎 Gemini response received:', {
-      responseType: typeof result.response,
-      hasText: !!result.response.text(),
-      textLength: result.response.text()?.length || 0
+      responseType: typeof result,
+      hasText: !!result.text,
+      textLength: result.text?.length || 0,
+      candidates: result.candidates?.length || 0
     })
     
-    const response = result.response;
-    const text = response.text();
+    const text = result.text;
     
     if (!text || text.trim() === '') {
       throw new Error('Empty response from Gemini')
@@ -242,78 +247,237 @@ const modelFunctions: Record<string, (query: string, userApiKey?: string) => Pro
   perplexity: queryPerplexity
 }
 
-// Pure JS diacritic removal (no external dependency)
-function removeDiacritics(str: string) {
-  return str.normalize('NFD').replace(/\p{Diacritic}/gu, '')
+// Pure JS diacritic and punctuation removal (no external dependency)
+function removeDiacriticsAndPunctuation(str: string) {
+  // Remove diacritics
+  let normalized = str.normalize('NFD').replace(/\p{Diacritic}/gu, '')
+  // Remove punctuation (apostrophes, periods, commas, dashes, etc.)
+  normalized = normalized.replace(/[\p{P}\p{S}]/gu, '')
+  return normalized
 }
 
-// Extract brand mentions from text
-function extractBrands(text: string, brandNames: string[]) {
-  const mentions: { brand: string; position: number; context: string }[] = []
-
-  // Helper to remove diacritics for comparison
-  function normalize(str: string) {
-    return str.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+// Helper to check if a position is inside a URL or markdown link
+function isInUrlOrCitation(pos: number, rawText: string) {
+  // Check for markdown links: [text](url)
+  const before = rawText.lastIndexOf('[', pos)
+  const after = rawText.indexOf(')', pos)
+  if (before !== -1 && after !== -1 && rawText.indexOf('](', before) < after && rawText.indexOf('](', before) > before) {
+    return true
   }
-
-  // Helper to check if a position is inside a URL or markdown link
-  function isInUrlOrCitation(pos: number, rawText: string) {
-    // Check for markdown links: [text](url)
-    const before = rawText.lastIndexOf('[', pos)
-    const after = rawText.indexOf(')', pos)
-    if (before !== -1 && after !== -1 && rawText.indexOf('](', before) < after && rawText.indexOf('](', before) > before) {
+  // Check for http(s)://
+  const urlRegex = /https?:\/\//g
+  let match
+  while ((match = urlRegex.exec(rawText)) !== null) {
+    const urlStart = match.index
+    const urlEnd = rawText.indexOf(' ', urlStart)
+    if (pos >= urlStart && (urlEnd === -1 || pos < urlEnd)) {
       return true
     }
-    // Check for http(s)://
-    const urlRegex = /https?:\/\//g
-    let match
-    while ((match = urlRegex.exec(rawText)) !== null) {
-      const urlStart = match.index
-      const urlEnd = rawText.indexOf(' ', urlStart)
-      if (pos >= urlStart && (urlEnd === -1 || pos < urlEnd)) {
-        return true
-      }
+  }
+  // Check for citation-like [1], [2], etc.
+  const citationRegex = /\[\d+\]/g
+  while ((match = citationRegex.exec(rawText)) !== null) {
+    if (pos >= match.index && pos < match.index + match[0].length) {
+      return true
     }
-    // Check for citation-like [1], [2], etc.
-    const citationRegex = /\[\d+\]/g
-    while ((match = citationRegex.exec(rawText)) !== null) {
-      if (pos >= match.index && pos < match.index + match[0].length) {
-        return true
-      }
+  }
+  return false
+}
+
+// Calculate Levenshtein distance for fuzzy matching
+function levenshteinDistance(str1: string, str2: string): number {
+  const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null))
+  
+  for (let i = 0; i <= str1.length; i++) matrix[0][i] = i
+  for (let j = 0; j <= str2.length; j++) matrix[j][0] = j
+  
+  for (let j = 1; j <= str2.length; j++) {
+    for (let i = 1; i <= str1.length; i++) {
+      const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1
+      matrix[j][i] = Math.min(
+        matrix[j][i - 1] + 1, // deletion
+        matrix[j - 1][i] + 1, // insertion
+        matrix[j - 1][i - 1] + indicator // substitution
+      )
     }
-    return false
+  }
+  
+  return matrix[str2.length][str1.length]
+}
+
+// Calculate similarity score between two strings
+function calculateSimilarity(str1: string, str2: string): number {
+  const maxLength = Math.max(str1.length, str2.length)
+  if (maxLength === 0) return 1.0
+  const distance = levenshteinDistance(str1, str2)
+  return 1 - (distance / maxLength)
+}
+
+// Enhanced brand normalization
+function normalizeBrandName(brand: string): string {
+  return brand
+    .toLowerCase()
+    .replace(/[^\w\s]/g, '') // Remove punctuation
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .trim()
+}
+
+// Extract brand mentions from text with improved matching
+function extractBrands(text: string, brandNames: string[]) {
+  // Helper to normalize for comparison
+  function normalize(str: string) {
+    return removeDiacriticsAndPunctuation(str).toLowerCase()
   }
 
-  brandNames.forEach(brandName => {
-    const safeBrandName = normalize(brandName)
-    if (safeBrandName.length === 0) return
+  // Build normalized text and mapping from normalized index to original index
+  let normalizedText = ''
+  const normIdxToOrigIdx: number[] = []
+  for (let i = 0; i < text.length; i++) {
+    const normChar = removeDiacriticsAndPunctuation(text[i]).toLowerCase()
+    if (normChar) {
+      normalizedText += normChar
+      normIdxToOrigIdx.push(i)
+    }
+  }
 
-    let idx = 0
-    while (idx <= text.length - brandName.length) {
-      const candidate = text.substr(idx, brandName.length)
-      const normCandidate = normalize(candidate)
-      // Improved word boundary check
-      const beforeOk = idx === 0 || !(/[\p{L}\p{N}]/u).test(text[idx - 1])
-      const afterOk = idx + brandName.length === text.length || !(/[\p{L}\p{N}]/u).test(text[idx + brandName.length])
-      if (normCandidate === safeBrandName) {
-        // Debug log for candidate
-        console.log(`[DEBUG] Brand scan: '${brandName}' at idx ${idx} | candidate='${candidate}' | before='${text[idx-1]||''}' after='${text[idx+brandName.length]||''}' | beforeOk=${beforeOk} afterOk=${afterOk}`)
-        if (beforeOk && afterOk) {
-          if (!isInUrlOrCitation(idx, text)) {
-            const start = Math.max(0, idx - 50)
-            const end = Math.min(text.length, idx + brandName.length + 50)
-            const context = text.substring(start, end)
-            mentions.push({ brand: brandName, position: idx, context })
-            console.log(`🔎 Matched brand: '${brandName}' at position ${idx} in text`)
-          }
-        }
-      }
-      idx++
+  // Create normalized brand map with fuzzy matching support
+  const normBrandMap = new Map<string, string>()
+  const brandVariations = new Map<string, string[]>()
+  
+  brandNames.forEach(brand => {
+    const norm = normalize(brand)
+    if (norm && !normBrandMap.has(norm)) {
+      normBrandMap.set(norm, brand)
+      
+      // Create variations for fuzzy matching
+      const variations = [
+        norm,
+        norm.replace(/\s+/g, ''), // Remove spaces
+        norm.replace(/\s+/g, '-'), // Replace spaces with hyphens
+        norm.replace(/\s+/g, '_'), // Replace spaces with underscores
+        // Add common business suffixes
+        norm + ' spa',
+        norm + ' ltda',
+        norm + ' eirl',
+        norm + ' empresa',
+        norm + ' company',
+        norm + ' inc',
+        norm + ' corp'
+      ]
+      brandVariations.set(brand, variations)
     }
   })
 
-  // Sort by position (earlier mentions first)
-  return mentions.sort((a, b) => a.position - b.position)
+  const mentions: { brand: string; position: number; context: string; confidence: number }[] = []
+  const usedPositions = new Set<number>()
+
+  // First pass: exact matches
+  for (const [normBrand, origBrand] of normBrandMap.entries()) {
+    if (!normBrand) continue
+    let idx = 0
+    while ((idx = normalizedText.indexOf(normBrand, idx)) !== -1) {
+      const origIdx = normIdxToOrigIdx[idx]
+      if (usedPositions.has(origIdx)) {
+        idx += normBrand.length
+        continue
+      }
+      
+      // Word boundary check in normalized text
+      const beforeOk = idx === 0 || !(/[\p{L}\p{N}]/u).test(normalizedText[idx - 1])
+      const afterOk = idx + normBrand.length === normalizedText.length || !(/[\p{L}\p{N}]/u).test(normalizedText[idx + normBrand.length])
+      
+      if (beforeOk && afterOk) {
+        // Check if not in URL/citation in original text
+        if (!isInUrlOrCitation(origIdx, text)) {
+          const start = Math.max(0, origIdx - 50)
+          const end = Math.min(text.length, origIdx + normBrand.length + 50)
+          const context = text.substring(start, end)
+          mentions.push({ 
+            brand: origBrand, 
+            position: origIdx, 
+            context,
+            confidence: 1.0
+          })
+          usedPositions.add(origIdx)
+        }
+      }
+      idx += normBrand.length
+    }
+  }
+
+  // Second pass: fuzzy matching for remaining text
+  const words = text.split(/\s+/)
+  let currentPos = 0
+  
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i]
+    const wordStart = currentPos
+    const wordEnd = currentPos + word.length
+    
+    // Skip if position already used
+    if (usedPositions.has(wordStart)) {
+      currentPos = wordEnd + 1
+      continue
+    }
+    
+    // Check for multi-word brand matches
+    for (let j = 1; j <= 4 && i + j <= words.length; j++) {
+      const phrase = words.slice(i, i + j).join(' ')
+      const normPhrase = normalize(phrase)
+      
+      // Try exact match first
+      if (normBrandMap.has(normPhrase)) {
+        const brand = normBrandMap.get(normPhrase)!
+        if (!usedPositions.has(wordStart)) {
+          const start = Math.max(0, wordStart - 50)
+          const end = Math.min(text.length, wordStart + phrase.length + 50)
+          const context = text.substring(start, end)
+          mentions.push({ 
+            brand, 
+            position: wordStart, 
+            context,
+            confidence: 0.9
+          })
+          usedPositions.add(wordStart)
+          break
+        }
+      }
+      
+      // Try fuzzy matching
+      for (const [brand, variations] of brandVariations.entries()) {
+        for (const variation of variations) {
+          const similarity = calculateSimilarity(normPhrase, variation)
+          if (similarity >= 0.8) { // 80% similarity threshold
+            if (!usedPositions.has(wordStart)) {
+              const start = Math.max(0, wordStart - 50)
+              const end = Math.min(text.length, wordStart + phrase.length + 50)
+              const context = text.substring(start, end)
+              mentions.push({ 
+                brand, 
+                position: wordStart, 
+                context,
+                confidence: similarity
+              })
+              usedPositions.add(wordStart)
+              break
+            }
+          }
+        }
+      }
+    }
+    
+    currentPos = wordEnd + 1
+  }
+
+  // Sort by position (earlier mentions first) and then by confidence
+  return mentions
+    .sort((a, b) => {
+      if (a.position !== b.position) {
+        return a.position - b.position
+      }
+      return b.confidence - a.confidence
+    })
+    .map(({ brand, position, context }) => ({ brand, position, context }))
 }
 
 function stripMarkdown(text: string): string {
@@ -512,7 +676,7 @@ export async function POST(request: Request) {
 
     // If no free queries available, check for user API keys or use platform keys for admin
     let useUserApiKeys = false
-    let userApiKeys: { [key: string]: string } = {}
+    const userApiKeys: { [key: string]: string } = {}
     
     if (!hasFreeQuery) {
       console.log('🔑 No free queries available, checking user API keys...')

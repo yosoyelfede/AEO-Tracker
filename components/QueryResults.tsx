@@ -1,10 +1,8 @@
+import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Copy, Calendar, Bot, ArrowLeft, Clock } from 'lucide-react'
-import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
-import { useAuth } from '@/components/auth-context'
+import { Bot, Copy, Calendar, Clock, ArrowLeft, AlertCircle } from 'lucide-react'
 
 interface QueryResult {
   id: string
@@ -16,46 +14,36 @@ interface QueryResult {
     position: number
     context: string
   }[]
+  success: true
+}
+
+interface QueryError {
+  model: string
+  success: false
+  error: string
 }
 
 interface QueryResultsProps {
-  results: QueryResult[]
+  results: (QueryResult | QueryError)[]
   queryText: string
   isHistorical?: boolean
   onClearHistorical?: () => void
+  queryBrands?: string[] // Add the brands that were used in the query
+  selectedModels?: string[] // Add the models that were selected for the query
 }
 
 const MODEL_CONFIGS = {
-  chatgpt: { name: 'ChatGPT', color: 'bg-green-100 text-green-800', icon: '🤖' },
-  claude: { name: 'Claude', color: 'bg-purple-100 text-purple-800', icon: '🧠' },
-  gemini: { name: 'Gemini', color: 'bg-blue-100 text-blue-800', icon: '💎' },
-  perplexity: { name: 'Perplexity', color: 'bg-orange-100 text-orange-800', icon: '🔍' }
+  chatgpt: { name: 'ChatGPT', color: 'bg-green-100 text-green-800', icon: '🤖', provider: 'OpenAI' },
+  claude: { name: 'Claude', color: 'bg-purple-100 text-purple-800', icon: '🧠', provider: 'Anthropic' },
+  gemini: { name: 'Gemini', color: 'bg-blue-100 text-blue-800', icon: '💎', provider: 'Google' },
+  perplexity: { name: 'Perplexity', color: 'bg-orange-100 text-orange-800', icon: '🔍', provider: 'Perplexity' }
 }
 
-export function QueryResults({ results, queryText, isHistorical = false, onClearHistorical }: QueryResultsProps) {
+// Define the correct order of models as they appear in the UI
+const MODEL_ORDER = ['chatgpt', 'claude', 'gemini', 'perplexity']
+
+export function QueryResults({ results, queryText, isHistorical = false, onClearHistorical, queryBrands = [], selectedModels = [] }: QueryResultsProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null)
-  const [userBrands, setUserBrands] = useState<string[]>([])
-  const { user } = useAuth()
-
-  useEffect(() => {
-    if (user) {
-      fetchUserBrands()
-    }
-  }, [user])
-
-  const fetchUserBrands = async () => {
-    if (!user) return
-    
-    const { data, error } = await supabase
-      .from('brands')
-      .select('name')
-      .eq('user_id', user.id) // Filter by current user
-      .order('name')
-
-    if (!error && data) {
-      setUserBrands(data.map(b => b.name))
-    }
-  }
 
   const copyToClipboard = async (text: string, id: string) => {
     try {
@@ -67,14 +55,58 @@ export function QueryResults({ results, queryText, isHistorical = false, onClear
     }
   }
 
-  const highlightBrands = (text: string) => {
-    let highlightedText = text
-    userBrands.forEach((brand, index) => {
-      const regex = new RegExp(`(${brand})`, 'gi')
-      const colorClass = `bg-yellow-200 font-semibold px-1 py-0.5 rounded`
-      highlightedText = highlightedText.replace(regex, `<mark class="${colorClass}">$1</mark>`)
-    })
-    return highlightedText
+  // Highlight brands in the text using normalization-aware matching
+  const highlightBrands = (text: string, detectedBrands: string[]) => {
+    if (detectedBrands.length === 0) return text
+
+    // Helper to normalize
+    const normalize = (str: string) =>
+      str
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^\w\s]/g, '')
+        .toLowerCase()
+
+    // Build a set for fast lookup
+    const detectedSet = new Set(detectedBrands.map(normalize))
+
+    // We'll build the highlighted string piece by piece
+    let result = ''
+    let i = 0
+    while (i < text.length) {
+      let found = false
+      // Try all detected brands at this position
+      for (const brand of detectedBrands) {
+        const brandNorm = normalize(brand)
+        // Try to match a substring of the same length as the brand (plus possible punctuation)
+        // We'll try up to brand.length+2 to allow for apostrophes, etc.
+        for (let len = brand.length; len <= brand.length + 2 && i + len <= text.length; len++) {
+          const candidate = text.slice(i, i + len)
+          if (normalize(candidate) === brandNorm) {
+            // Highlight this substring
+            result += `<mark class="bg-yellow-200 font-semibold px-1 py-0.5 rounded">${candidate}</mark>`
+            i += len
+            found = true
+            break
+          }
+        }
+        if (found) break
+      }
+      if (!found) {
+        result += text[i]
+        i++
+      }
+    }
+    return result
+  }
+
+  // Helper function to normalize text (same as backend)
+  const removeDiacriticsAndPunctuation = (str: string) => {
+    return str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove diacritics
+      .replace(/[^\w\s]/g, '') // Remove punctuation
+      .toLowerCase()
   }
 
   const formatDate = (dateString: string) => {
@@ -86,7 +118,18 @@ export function QueryResults({ results, queryText, isHistorical = false, onClear
     })
   }
 
-  if (results.length === 0) {
+  // Create a map of results by model for easy lookup
+  const resultsByModel = new Map<string, QueryResult | QueryError>()
+  results.forEach(result => {
+    resultsByModel.set(result.model, result)
+  })
+
+  // Generate the ordered list of models to display
+  const modelsToDisplay = selectedModels.length > 0 
+    ? selectedModels 
+    : MODEL_ORDER.filter(model => resultsByModel.has(model))
+
+  if (modelsToDisplay.length === 0) {
     return (
       <Card>
         <CardContent className="py-8">
@@ -108,7 +151,7 @@ export function QueryResults({ results, queryText, isHistorical = false, onClear
           <CardTitle className="flex items-center gap-2">
             <Bot className="h-5 w-5" />
               {isHistorical && <Clock className="h-4 w-4 text-gray-500" />}
-            Query Results: "{queryText}"
+            Query Results: &ldquo;{queryText}&rdquo;
               {isHistorical && <Badge variant="outline">Historical</Badge>}
           </CardTitle>
             {isHistorical && onClearHistorical && (
@@ -128,12 +171,63 @@ export function QueryResults({ results, queryText, isHistorical = false, onClear
 
       {/* Results Grid */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2">
-        {results.map((result) => {
-          const modelConfig = MODEL_CONFIGS[result.model as keyof typeof MODEL_CONFIGS] || 
-                             { name: result.model, color: 'bg-gray-100 text-gray-800', icon: '🤖' }
+        {modelsToDisplay.map((modelId) => {
+          const result = resultsByModel.get(modelId)
+          const modelConfig = MODEL_CONFIGS[modelId as keyof typeof MODEL_CONFIGS] || 
+                             { name: modelId, color: 'bg-gray-100 text-gray-800', icon: '🤖', provider: 'Unknown' }
+          
+          // Check if this is an error result
+          if (!result || !result.success) {
+            const error = result?.error || 'Unknown error occurred'
+            return (
+              <Card key={modelId} className="flex flex-col h-full border-red-200 bg-red-50">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{modelConfig.icon}</span>
+                      <CardTitle className="text-lg">{modelConfig.name}</CardTitle>
+                    </div>
+                    <Badge variant="destructive" className="bg-red-100 text-red-800">
+                      Error
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                    <Calendar className="h-4 w-4" />
+                    {formatDate(new Date().toISOString())}
+                  </div>
+                </CardHeader>
+                
+                <CardContent className="flex-1">
+                  <div className="flex items-start gap-3 p-4 bg-red-100 rounded-lg">
+                    <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+                    <div className="text-sm">
+                      <p className="font-medium text-red-800 mb-1">
+                        {modelConfig.provider} Service Error
+                      </p>
+                      <p className="text-red-700">
+                        {error.includes('529') && error.includes('overloaded') 
+                          ? `${modelConfig.provider}'s servers are currently overloaded. Please try again in a few minutes.`
+                          : error.includes('rate limit') || error.includes('quota')
+                          ? `${modelConfig.provider} rate limit exceeded. Please try again later or check your API key usage.`
+                          : error.includes('API key') || error.includes('authentication')
+                          ? `Authentication error with ${modelConfig.provider}. Please check your API key.`
+                          : `${modelConfig.provider} service is temporarily unavailable. Please try again later.`
+                        }
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          }
+
+          // Handle successful result
+          const successfulResult = result as QueryResult
+          const detectedBrands = successfulResult.mentions.map(m => m.brand)
+          const undetectedBrands = queryBrands.filter(brand => !detectedBrands.includes(brand))
           
           return (
-            <Card key={result.id} className="flex flex-col h-full">
+            <Card key={successfulResult.id} className="flex flex-col h-full">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -142,34 +236,34 @@ export function QueryResults({ results, queryText, isHistorical = false, onClear
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="secondary" className={modelConfig.color}>
-                      {result.mentions.length} mentions
+                      {successfulResult.mentions.length} mentions
                     </Badge>
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => copyToClipboard(result.response_text, result.id)}
+                      onClick={() => copyToClipboard(successfulResult.response_text, successfulResult.id)}
                       className="h-8 w-8 p-0"
                     >
-                      {copiedId === result.id ? '✓' : <Copy className="h-4 w-4" />}
+                      {copiedId === successfulResult.id ? '✓' : <Copy className="h-4 w-4" />}
                     </Button>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 text-sm text-muted-foreground">
                   <Calendar className="h-4 w-4" />
-                  {formatDate(result.created_at)}
+                  {formatDate(successfulResult.created_at)}
                 </div>
               </CardHeader>
               
               <CardContent className="flex-1">
                 {/* Brand Mentions Summary */}
-                {result.mentions.length > 0 && (
+                {successfulResult.mentions.length > 0 && (
                   <div className="mb-4 p-3 bg-muted rounded-lg">
                     <p className="text-sm font-medium mb-2">Detected Brands:</p>
                     <div className="flex flex-wrap gap-1">
                       {/* Group mentions by brand, order by first appearance */}
                       {(() => {
                         const brandOrder: { brand: string, firstIdx: number, count: number }[] = [];
-                        result.mentions.forEach((mention, idx) => {
+                        successfulResult.mentions.forEach((mention, idx) => {
                           const found = brandOrder.find(b => b.brand === mention.brand);
                           if (found) {
                             found.count++;
@@ -192,16 +286,16 @@ export function QueryResults({ results, queryText, isHistorical = false, onClear
                 <div 
                   className="prose prose-sm max-w-none text-sm leading-relaxed"
                   dangerouslySetInnerHTML={{ 
-                    __html: highlightBrands(result.response_text) 
+                    __html: highlightBrands(successfulResult.response_text, detectedBrands) 
                   }}
                 />
 
-                {/* No mentions message */}
-                {result.mentions.length === 0 && (
+                {/* No mentions message - only show undetected brands */}
+                {undetectedBrands.length > 0 && (
                   <div className="text-center py-4 text-muted-foreground text-sm">
-                    {userBrands.length > 0 
-                      ? `No tracked brands (${userBrands.join(', ')}) mentioned in this response`
-                      : 'No tracked brands mentioned in this response'
+                    {undetectedBrands.length === queryBrands.length 
+                      ? `No tracked brands (${queryBrands.join(', ')}) mentioned in this response`
+                      : `The following tracked brands were not mentioned: ${undetectedBrands.join(', ')}`
                     }
                   </div>
                 )}

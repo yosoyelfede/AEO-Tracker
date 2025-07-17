@@ -683,7 +683,15 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
           {/* Brand List Selector */}
           <select
             value={selectedBrandListId}
-            onChange={(e) => setSelectedBrandListId(e.target.value)}
+            onChange={(e) => {
+              setSelectedBrandListId(e.target.value)
+              const selectedList = brandLists.find(list => list.id === e.target.value)
+              if (selectedList) {
+                setSelectedBrands(selectedList.items.map(item => item.brand_name))
+              } else {
+                setSelectedBrands([])
+              }
+            }}
             className="px-3 py-2 border rounded-lg"
           >
             {brandLists.map(list => (

@@ -8,12 +8,28 @@ export async function GET(request: Request) {
 
   if (code) {
     const supabase = await createClient()
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
-    if (!error) {
-      // Successful authentication, redirect to dashboard
-      return NextResponse.redirect(`${origin}${next}`)
-    } else {
-      console.error('Auth callback error:', error)
+    
+    try {
+      const { error, data } = await supabase.auth.exchangeCodeForSession(code)
+      
+      // Check if we have a session, even if there was an error
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (session) {
+        // User is authenticated, redirect to dashboard
+        return NextResponse.redirect(`${origin}${next}`)
+      } else if (error) {
+        console.error('Auth callback error:', error)
+        // Only redirect to error if we don't have a session
+        return NextResponse.redirect(`${origin}/auth/error`)
+      }
+    } catch (err) {
+      console.error('Auth callback exception:', err)
+      // Check if user is authenticated despite the exception
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        return NextResponse.redirect(`${origin}${next}`)
+      }
     }
   }
 

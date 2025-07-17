@@ -30,17 +30,27 @@ export function BrandListManager({ selectedBrandListId, onBrandListSelect }: Bra
   const { user } = useAuth()
   const [brandLists, setBrandLists] = useState<BrandList[]>([])
   const [loading, setLoading] = useState(true)
+  const [creatingDefault, setCreatingDefault] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
   const [newListName, setNewListName] = useState('')
   const [newListDescription, setNewListDescription] = useState('')
   const [editingList, setEditingList] = useState<string | null>(null)
   const [newBrandName, setNewBrandName] = useState('')
+  const [expandedLists, setExpandedLists] = useState<string[]>([])
+  const [deletingListId, setDeletingListId] = useState<string | null>(null)
 
   useEffect(() => {
     if (user) {
       fetchBrandLists()
     }
   }, [user])
+
+  // Expand only the selected list by default
+  useEffect(() => {
+    if (selectedBrandListId) {
+      setExpandedLists([selectedBrandListId])
+    }
+  }, [selectedBrandListId])
 
   const fetchBrandLists = async () => {
     if (!user) return
@@ -62,12 +72,51 @@ export function BrandListManager({ selectedBrandListId, onBrandListSelect }: Bra
       .order('created_at', { ascending: false })
 
     if (!error && data) {
-      setBrandLists(data.map(list => ({
+      const lists = data.map(list => ({
         ...list,
         items: list.brand_list_items || []
-      })))
+      }))
+      setBrandLists(lists)
+      
+      // Auto-select first list if none selected and lists exist
+      if (!selectedBrandListId && lists.length > 0) {
+        const firstList = lists[0]
+        const brandNames = firstList.items.map(item => item.brand_name)
+        onBrandListSelect(firstList.id, brandNames)
+      }
+      
+      // If no brand lists exist, create a default one for new users
+      if (lists.length === 0) {
+        await createDefaultBrandList()
+      }
     }
     setLoading(false)
+  }
+
+  const createDefaultBrandList = async () => {
+    if (!user) return
+    
+    setCreatingDefault(true)
+    try {
+      const { data, error } = await supabase
+        .from('brand_lists')
+        .insert({
+          user_id: user.id,
+          name: 'My Brands',
+          description: 'Default brand list for tracking'
+        })
+        .select()
+        .single()
+
+      if (!error && data) {
+        // Refresh the lists after creating the default one
+        fetchBrandLists()
+      }
+    } catch (err) {
+      console.error('Error creating default brand list:', err)
+    } finally {
+      setCreatingDefault(false)
+    }
   }
 
   const createBrandList = async () => {
@@ -119,18 +168,33 @@ export function BrandListManager({ selectedBrandListId, onBrandListSelect }: Bra
     }
   }
 
+  const toggleExpandList = (listId: string) => {
+    setExpandedLists(prev =>
+      prev.includes(listId)
+        ? prev.filter(id => id !== listId)
+        : [...prev, listId]
+    )
+  }
+
   const deleteBrandList = async (brandListId: string) => {
+    console.log('Attempting to delete brand list:', brandListId)
+    setDeletingListId(brandListId)
     const { error } = await supabase
       .from('brand_lists')
       .delete()
       .eq('id', brandListId)
 
-    if (!error) {
+    if (error) {
+      alert('Error deleting brand list: ' + error.message)
+      console.error('Error deleting brand list:', error)
+    } else {
       if (selectedBrandListId === brandListId) {
         onBrandListSelect(null, [])
       }
+      setExpandedLists(prev => prev.filter(id => id !== brandListId))
       fetchBrandLists()
     }
+    setDeletingListId(null)
   }
 
   const handleBrandListSelect = (brandList: BrandList | null) => {
@@ -144,12 +208,12 @@ export function BrandListManager({ selectedBrandListId, onBrandListSelect }: Bra
 
   const selectedList = brandLists.find(list => list.id === selectedBrandListId)
 
-  if (loading) {
+  if (loading || creatingDefault) {
     return (
       <Card>
         <CardContent className="py-8">
           <div className="text-center text-muted-foreground">
-            Loading brand lists...
+            {creatingDefault ? 'Creating your default brand list...' : 'Loading brand lists...'}
           </div>
         </CardContent>
       </Card>
@@ -200,6 +264,11 @@ export function BrandListManager({ selectedBrandListId, onBrandListSelect }: Bra
               <p className="text-xs mt-1">
                 Brands: {selectedList.items.map(item => item.brand_name).join(', ') || 'No brands added yet'}
               </p>
+              {selectedList.items.length === 0 && (
+                <p className="text-xs mt-2 text-blue-600">
+                  💡 Add some brands to your list below to start tracking them in AI responses!
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -243,71 +312,83 @@ export function BrandListManager({ selectedBrandListId, onBrandListSelect }: Bra
         {brandLists.length > 0 && (
           <div className="space-y-3">
             <h3 className="font-medium">Your Brand Lists</h3>
-            {brandLists.map((list) => (
-              <div key={list.id} className="border rounded-lg p-3">
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <h4 className="font-medium">{list.name}</h4>
-                    {list.description && (
-                      <p className="text-sm text-gray-600">{list.description}</p>
-                    )}
-                  </div>
-                  <div className="flex gap-1">
-                    <Button
-                      onClick={() => setEditingList(editingList === list.id ? null : list.id)}
-                      variant="outline"
-                      size="sm"
-                    >
-                      <Edit className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      onClick={() => deleteBrandList(list.id)}
-                      variant="outline"
-                      size="sm"
-                    >
-                      <Trash className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Brand Items */}
-                <div className="flex flex-wrap gap-1 mb-2">
-                  {list.items.map((item) => (
-                    <Badge
-                      key={item.id}
-                      variant="secondary"
-                      className="flex items-center gap-1"
-                    >
-                      {item.brand_name}
+            {brandLists.map((list) => {
+              const isExpanded = expandedLists.includes(list.id)
+              return (
+                <div key={list.id} className="border rounded-lg p-3">
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="flex items-center gap-2">
                       <button
-                        onClick={() => removeBrandFromList(item.id)}
-                        className="ml-1 text-xs hover:text-red-600"
+                        onClick={() => toggleExpandList(list.id)}
+                        className="focus:outline-none"
+                        aria-label={isExpanded ? `Collapse ${list.name}` : `Expand ${list.name}`}
                       >
-                        ×
+                        {isExpanded ? '▼' : '►'}
                       </button>
-                    </Badge>
-                  ))}
-                  {list.items.length === 0 && (
-                    <span className="text-sm text-gray-500">No brands added yet</span>
+                      <h4 className="font-medium">{list.name}</h4>
+                      <span className="text-xs text-gray-500">({list.items.length})</span>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button
+                        onClick={() => setEditingList(editingList === list.id ? null : list.id)}
+                        variant="outline"
+                        size="sm"
+                      >
+                        <Edit className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        onClick={() => deleteBrandList(list.id)}
+                        variant="outline"
+                        size="sm"
+                        disabled={deletingListId === list.id}
+                      >
+                        <Trash className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Only show brands and add form if expanded */}
+                  {isExpanded && (
+                    <>
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {list.items.map((item) => (
+                          <Badge
+                            key={item.id}
+                            variant="secondary"
+                            className="flex items-center gap-1"
+                          >
+                            {item.brand_name}
+                            <button
+                              onClick={() => removeBrandFromList(item.id)}
+                              className="ml-1 text-xs hover:text-red-600"
+                            >
+                              ×
+                            </button>
+                          </Badge>
+                        ))}
+                        {list.items.length === 0 && (
+                          <span className="text-sm text-gray-500">No brands added yet</span>
+                        )}
+                      </div>
+                      {/* Add Brand Form */}
+                      {editingList === list.id && (
+                        <div className="flex gap-2 mt-2">
+                          <input
+                            type="text"
+                            placeholder="Brand name"
+                            value={newBrandName}
+                            onChange={(e) => setNewBrandName(e.target.value)}
+                            className="flex-1 px-2 py-1 border rounded text-sm"
+                            onKeyPress={(e) => e.key === 'Enter' && addBrandToList(list.id)}
+                          />
+                          <Button onClick={() => addBrandToList(list.id)} size="sm">Add</Button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
-
-                {/* Add Brand Form */}
-                {editingList === list.id && (
-                  <div className="flex gap-2 mt-2">
-                    <input
-                      type="text"
-                      placeholder="Brand name"
-                      value={newBrandName}
-                      onChange={(e) => setNewBrandName(e.target.value)}
-                      className="flex-1 px-2 py-1 border rounded text-sm"
-                      onKeyPress={(e) => e.key === 'Enter' && addBrandToList(list.id)}
-                    />
-                    <Button onClick={() => addBrandToList(list.id)} size="sm">Add</Button>
-                  </div>
-                )}
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </CardContent>

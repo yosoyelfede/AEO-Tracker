@@ -22,6 +22,13 @@ interface QueryResult {
     position: number
     context: string
   }[]
+  success: true
+}
+
+interface QueryError {
+  model: string
+  success: false
+  error: string
 }
 
 export default function Dashboard() {
@@ -31,7 +38,7 @@ export default function Dashboard() {
   const [currentQuery, setCurrentQuery] = useState('')
   const [selectedModels, setSelectedModels] = useState<string[]>(['chatgpt'])
   const [isRunning, setIsRunning] = useState(false)
-  const [results, setResults] = useState<QueryResult[]>([])
+  const [results, setResults] = useState<(QueryResult | QueryError)[]>([])
   const [activeTab, setActiveTab] = useState<'query' | 'analytics'>('query')
   const [selectedBrandListId, setSelectedBrandListId] = useState<string | null>(null)
   const [selectedBrandNames, setSelectedBrandNames] = useState<string[]>([])
@@ -40,6 +47,7 @@ export default function Dashboard() {
     id: string
     prompt: string
     results: QueryResult[]
+    models: string[]
   } | null>(null)
 
   const models = [
@@ -85,8 +93,13 @@ export default function Dashboard() {
     if (!currentQuery.trim() || selectedModels.length === 0) return
 
     // Check if user has selected a brand list
-    if (!selectedBrandListId || selectedBrandNames.length === 0) {
-      alert('Please select a brand list to track before running a query.')
+    if (!selectedBrandListId) {
+      alert('Please select a brand list to track before running a query. If you just created an account, please wait a moment for the default brand list to load.')
+      return
+    }
+
+    if (selectedBrandNames.length === 0) {
+      alert('The selected brand list has no brands. Please add some brands to your list before running a query.')
       return
     }
 
@@ -137,29 +150,34 @@ export default function Dashboard() {
       if (data.success) {
         console.log('🔍 Raw results before filtering:', JSON.stringify(data.results, null, 2)) // Debug log
         // Transform the API response to match our QueryResult interface
-        const transformedResults = data.results
-          .filter((result: any) => {
-            console.log('🔍 Result success check:', result.success, 'Model:', result.model, 'Error:', result.error) // Debug log
-            return result.success // Only show successful results
-          })
-          .map((result: any) => {
-            console.log('🔍 Individual result:', result) // Debug log
+        const transformedResults = data.results.map((result: any) => {
+          console.log('🔍 Individual result:', result) // Debug log
+          
+          if (result.success) {
             return {
               id: result.runId || result.id || crypto.randomUUID(),
               model: result.model,
               response_text: result.response_text || result.responseText || '',
               created_at: new Date().toISOString(),
               mentions: result.mentions || [],
+              success: true as const,
               api_key_source: result.api_key_source,
               used_free_query: result.used_free_query
             }
-          })
+          } else {
+            return {
+              model: result.model,
+              success: false as const,
+              error: result.error || 'Unknown error occurred'
+            }
+          }
+        })
 
         console.log('🔍 Transformed results:', transformedResults) // Debug log
         
         if (transformedResults.length === 0) {
-          console.warn('⚠️ No successful results found after filtering')
-          alert('No successful results were returned. Please check the console for more details.')
+          console.warn('⚠️ No results found')
+          alert('No results were returned. Please check the console for more details.')
         }
         
         setResults(transformedResults)
@@ -240,7 +258,8 @@ export default function Dashboard() {
           model: run.model,
           response_text: run.raw_response || '',
           created_at: run.created_at,
-          mentions
+          mentions,
+          success: true as const
         }
       })
 
@@ -248,7 +267,8 @@ export default function Dashboard() {
       setSelectedHistoricalQuery({
         id: queryId,
         prompt,
-        results: transformedResults
+        results: transformedResults,
+        models: transformedResults.map(r => r.model)
       })
       setResults([]) // Clear current results
       setActiveTab('query') // Switch to query tab to show results
@@ -398,6 +418,8 @@ export default function Dashboard() {
                     ? 'Running on selected models...' 
                     : !selectedBrandListId 
                     ? 'Select a brand list to run query'
+                    : selectedBrandNames.length === 0
+                    ? 'Add brands to your list to run query'
                     : `Run on selected models (${selectedModels.length})`
                   }
                 </Button>
@@ -411,6 +433,8 @@ export default function Dashboard() {
                 queryText={selectedHistoricalQuery ? selectedHistoricalQuery.prompt : currentQuery}
                 isHistorical={!!selectedHistoricalQuery}
                 onClearHistorical={() => setSelectedHistoricalQuery(null)}
+                queryBrands={selectedBrandNames} // Pass the brands used in the query
+                selectedModels={selectedHistoricalQuery ? selectedHistoricalQuery.models : selectedModels}
               />
             )}
 
