@@ -130,8 +130,8 @@ export default function Dashboard() {
         // Transform the API response to match our QueryResult interface
         const transformedResults = data.results
           .filter((result: any) => {
-            console.log('🔍 Result success check:', result.success, 'Full result:', JSON.stringify(result, null, 2)) // Debug log
-            return result.success
+            console.log('🔍 Result success check:', result.success, 'Model:', result.model, 'Error:', result.error) // Debug log
+            return true // TEMPORARILY SHOW ALL RESULTS INCLUDING FAILURES
           })
           .map((result: any) => {
             console.log('🔍 Individual result:', result) // Debug log
