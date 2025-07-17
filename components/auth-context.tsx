@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState } from 'react'
-import { User } from '@supabase/supabase-js'
+import { User, Session } from '@supabase/supabase-js'
 import { createBrowserClient } from '@supabase/ssr'
 
 // Create browser client
@@ -13,8 +13,8 @@ const supabase = createBrowserClient(
 interface AuthContextType {
   user: User | null
   loading: boolean
-  signInWithPassword: (email: string, password: string) => Promise<any>
-  signUpWithPassword: (email: string, password: string) => Promise<any>
+  signInWithPassword: (email: string, password: string) => Promise<{ user: User | null; session: Session | null }>
+  signUpWithPassword: (email: string, password: string) => Promise<{ user: User | null; session: Session | null }>
   signOut: () => Promise<void>
 }
 

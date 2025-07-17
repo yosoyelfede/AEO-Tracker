@@ -67,8 +67,8 @@ export function QueryResults({ results, queryText, isHistorical = false, onClear
         .replace(/[^\w\s]/g, '')
         .toLowerCase()
 
-    // Build a set for fast lookup
-    const detectedSet = new Set(detectedBrands.map(normalize))
+    // Build a set for fast lookup (unused but kept for potential future optimization)
+    // const detectedSet = new Set(detectedBrands.map(normalize))
 
     // We'll build the highlighted string piece by piece
     let result = ''
@@ -100,14 +100,14 @@ export function QueryResults({ results, queryText, isHistorical = false, onClear
     return result
   }
 
-  // Helper function to normalize text (same as backend)
-  const removeDiacriticsAndPunctuation = (str: string) => {
-    return str
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '') // Remove diacritics
-      .replace(/[^\w\s]/g, '') // Remove punctuation
-      .toLowerCase()
-  }
+  // Helper function to normalize text (same as backend) - unused but kept for consistency
+  // const removeDiacriticsAndPunctuation = (str: string) => {
+  //   return str
+  //     .normalize('NFD')
+  //     .replace(/[\u0300-\u036f]/g, '') // Remove diacritics
+  //     .replace(/[^\w\s]/g, '') // Remove punctuation
+  //     .toLowerCase()
+  // }
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('en-US', {

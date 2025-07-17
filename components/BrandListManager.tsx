@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -39,20 +39,7 @@ export function BrandListManager({ selectedBrandListId, onBrandListSelect }: Bra
   const [expandedLists, setExpandedLists] = useState<string[]>([])
   const [deletingListId, setDeletingListId] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (user) {
-      fetchBrandLists()
-    }
-  }, [user])
-
-  // Expand only the selected list by default
-  useEffect(() => {
-    if (selectedBrandListId) {
-      setExpandedLists([selectedBrandListId])
-    }
-  }, [selectedBrandListId])
-
-  const fetchBrandLists = async () => {
+  const fetchBrandLists = useCallback(async () => {
     if (!user) return
     
     setLoading(true)
@@ -84,16 +71,11 @@ export function BrandListManager({ selectedBrandListId, onBrandListSelect }: Bra
         const brandNames = firstList.items.map(item => item.brand_name)
         onBrandListSelect(firstList.id, brandNames)
       }
-      
-      // If no brand lists exist, create a default one for new users
-      if (lists.length === 0) {
-        await createDefaultBrandList()
-      }
     }
     setLoading(false)
-  }
+  }, [user, selectedBrandListId, onBrandListSelect])
 
-  const createDefaultBrandList = async () => {
+  const createDefaultBrandList = useCallback(async () => {
     if (!user) return
     
     setCreatingDefault(true)
@@ -117,12 +99,33 @@ export function BrandListManager({ selectedBrandListId, onBrandListSelect }: Bra
     } finally {
       setCreatingDefault(false)
     }
-  }
+  }, [user, fetchBrandLists])
+
+  // Fetch brand lists when user changes
+  useEffect(() => {
+    if (user) {
+      fetchBrandLists()
+    }
+  }, [user, fetchBrandLists])
+
+  // Create default brand list if no lists exist after fetching
+  useEffect(() => {
+    if (!loading && brandLists.length === 0 && user && !creatingDefault) {
+      createDefaultBrandList()
+    }
+  }, [loading, brandLists.length, user, creatingDefault, createDefaultBrandList])
+
+  // Expand only the selected list by default
+  useEffect(() => {
+    if (selectedBrandListId) {
+      setExpandedLists([selectedBrandListId])
+    }
+  }, [selectedBrandListId])
 
   const createBrandList = async () => {
     if (!user || !newListName.trim()) return
 
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('brand_lists')
       .insert({
         user_id: user.id,

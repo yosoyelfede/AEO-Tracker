@@ -9,7 +9,7 @@ import { QueryResults } from '@/components/QueryResults'
 import { AEOAnalyticsDashboard } from '@/components/AEOAnalyticsDashboard'
 import { BrandListManager } from '@/components/BrandListManager'
 import { supabase } from '@/lib/supabase'
-import { Query, Brand } from '@/types'
+import { Query, ApiQueryResponse, ApiQueryResult, ApiMention, HistoricalQuery } from '@/types'
 import { BarChart3, Search, History, Settings } from 'lucide-react'
 
 interface QueryResult {
@@ -43,12 +43,7 @@ export default function Dashboard() {
   const [selectedBrandListId, setSelectedBrandListId] = useState<string | null>(null)
   const [selectedBrandNames, setSelectedBrandNames] = useState<string[]>([])
   const [analyticsRefreshTrigger, setAnalyticsRefreshTrigger] = useState(0)
-  const [selectedHistoricalQuery, setSelectedHistoricalQuery] = useState<{
-    id: string
-    prompt: string
-    results: QueryResult[]
-    models: string[]
-  } | null>(null)
+  const [selectedHistoricalQuery, setSelectedHistoricalQuery] = useState<HistoricalQuery | null>(null)
 
   const models = [
     { id: 'chatgpt', name: 'ChatGPT', icon: '🤖', available: true },
@@ -57,7 +52,7 @@ export default function Dashboard() {
     { id: 'perplexity', name: 'Perplexity', icon: '🔍', available: true }
   ]
 
-  const availableModels = models.filter(m => m.available)
+  // const availableModels = models.filter(m => m.available)
 
   useEffect(() => {
     if (loading) return
@@ -144,13 +139,13 @@ export default function Dashboard() {
         throw new Error(`Expected JSON response but got: ${contentType}. Response: ${responseText}`)
       }
 
-      const data = await response.json()
+      const data: ApiQueryResponse = await response.json()
       console.log('🔍 API Response:', data) // Debug log
 
       if (data.success) {
         console.log('🔍 Raw results before filtering:', JSON.stringify(data.results, null, 2)) // Debug log
         // Transform the API response to match our QueryResult interface
-        const transformedResults = data.results.map((result: any) => {
+        const transformedResults = data.results.map((result: ApiQueryResult) => {
           console.log('🔍 Individual result:', result) // Debug log
           
           if (result.success) {
@@ -159,7 +154,11 @@ export default function Dashboard() {
               model: result.model,
               response_text: result.response_text || result.responseText || '',
               created_at: new Date().toISOString(),
-              mentions: result.mentions || [],
+              mentions: result.mentions?.map((mention: ApiMention) => ({
+                brand: mention.brands.name,
+                position: mention.rank,
+                context: `Ranked #${mention.rank}`
+              })) || [],
               success: true as const,
               api_key_source: result.api_key_source,
               used_free_query: result.used_free_query
@@ -191,8 +190,8 @@ export default function Dashboard() {
         })
 
         // Show message about API key usage
-        const usedUserKeys = transformedResults.some((r: any) => r.api_key_source === 'user')
-        const usedFreeQuery = transformedResults.some((r: any) => r.used_free_query)
+        const usedUserKeys = transformedResults.some((r: QueryResult | QueryError) => 'api_key_source' in r && r.api_key_source === 'user')
+        const usedFreeQuery = transformedResults.some((r: QueryResult | QueryError) => 'used_free_query' in r && r.used_free_query)
         
         if (usedFreeQuery) {
           alert('✅ Query completed using your free query! Future queries will require your own API keys.')
@@ -244,14 +243,33 @@ export default function Dashboard() {
         return
       }
 
-      // Transform the data to match our QueryResult interface
-      const transformedResults = data.map(run => {
-        // Convert mentions to the format expected by QueryResults
-        const mentions = run.mentions.map((mention: any, index: number) => ({
-          brand: mention.brands.name,
+      // Transform the data to match ApiQueryResult interface for HistoricalQuery
+      const apiResults: ApiQueryResult[] = data.map(run => {
+        // Convert mentions to the format expected by ApiMention
+        const mentions = run.mentions?.map((mention: { rank: number; brands: { name: string }[] }) => ({
+          rank: mention.rank,
+          brands: {
+            name: mention.brands[0]?.name || 'Unknown Brand'
+          }
+        })) || []
+
+        return {
+          id: run.id,
+          model: run.model,
+          response_text: run.raw_response || '',
+          mentions,
+          success: true
+        }
+      })
+
+      // Transform the data to match QueryResult interface for QueryResults component
+      const transformedResults: (QueryResult | QueryError)[] = data.map(run => {
+        // Convert mentions to the format expected by QueryResult
+        const mentions = run.mentions?.map((mention: { rank: number; brands: { name: string }[] }, index: number) => ({
+          brand: mention.brands[0]?.name || 'Unknown Brand',
           position: index,
           context: `Ranked #${mention.rank}`
-        }))
+        })) || []
 
         return {
           id: run.id,
@@ -267,10 +285,10 @@ export default function Dashboard() {
       setSelectedHistoricalQuery({
         id: queryId,
         prompt,
-        results: transformedResults,
-        models: transformedResults.map(r => r.model)
+        results: apiResults,
+        models: apiResults.map(r => r.model)
       })
-      setResults([]) // Clear current results
+      setResults(transformedResults) // Set the transformed results for display
       setActiveTab('query') // Switch to query tab to show results
     } catch (error) {
       console.error('Error loading historical query results:', error)
@@ -429,7 +447,7 @@ export default function Dashboard() {
             {/* Results Section - Show either current results or historical results */}
             {(results.length > 0 || selectedHistoricalQuery) && (
               <QueryResults 
-                results={selectedHistoricalQuery ? selectedHistoricalQuery.results : results}
+                results={results}
                 queryText={selectedHistoricalQuery ? selectedHistoricalQuery.prompt : currentQuery}
                 isHistorical={!!selectedHistoricalQuery}
                 onClearHistorical={() => setSelectedHistoricalQuery(null)}

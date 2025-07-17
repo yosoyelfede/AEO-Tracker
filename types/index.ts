@@ -170,4 +170,54 @@ export interface SecuritySettings {
   two_factor_enabled: boolean
   last_login?: string
   failed_login_attempts: number
+}
+
+// API Response Types for Dashboard
+export interface ApiQueryResult {
+  runId?: string
+  id?: string
+  model: string
+  response_text?: string
+  responseText?: string
+  mentions?: ApiMention[]
+  success: boolean
+  error?: string
+  api_key_source?: 'platform' | 'user'
+  used_free_query?: boolean
+}
+
+export interface ApiMention {
+  rank: number
+  brands: {
+    name: string
+  }
+}
+
+export interface ApiQueryResponse {
+  success: boolean
+  results: ApiQueryResult[]
+  error?: string
+  message?: string
+  redirect_to?: string
+}
+
+// Historical Query Types
+export interface HistoricalQuery {
+  id: string
+  prompt: string
+  results: ApiQueryResult[]
+  models: string[]
+}
+
+// Brand List Types
+export interface BrandList {
+  id: string
+  name: string
+  user_id: string
+  created_at: string
+  updated_at: string
+}
+
+export interface BrandListWithBrands extends BrandList {
+  brands: Brand[]
 } 

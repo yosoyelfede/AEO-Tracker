@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { isAdminEmail } from '@/lib/admin'
-import OpenAI from 'openai'
-import Anthropic from '@anthropic-ai/sdk'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+// import OpenAI from 'openai'
+// import Anthropic from '@anthropic-ai/sdk'
+// import { GoogleGenerativeAI } from '@google/generative-ai'
 
 // Rate limiting storage (in production, use Redis or database)
 const rateLimit = new Map<string, number[]>()
@@ -31,18 +31,18 @@ function checkRateLimit(userId: string): boolean {
   return true // Request allowed
 }
 
-// Initialize API clients
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-}) : null
+// Initialize API clients - these are used for validation but not directly in queries
+// const openai = process.env.OPENAI_API_KEY ? new OpenAI({
+//   apiKey: process.env.OPENAI_API_KEY
+// }) : null
 
-const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY
-}) : null
+// const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({
+//   apiKey: process.env.ANTHROPIC_API_KEY
+// }) : null
 
-const gemini = process.env.GOOGLE_GENERATIVE_AI_API_KEY ? new GoogleGenerativeAI(
-  process.env.GOOGLE_GENERATIVE_AI_API_KEY
-) : null
+// const gemini = process.env.GOOGLE_GENERATIVE_AI_API_KEY ? new GoogleGenerativeAI(
+//   process.env.GOOGLE_GENERATIVE_AI_API_KEY
+// ) : null
 
 // Query functions for each LLM
 async function queryChatGPT(query: string, userApiKey?: string) {
@@ -313,14 +313,14 @@ function calculateSimilarity(str1: string, str2: string): number {
   return 1 - (distance / maxLength)
 }
 
-// Enhanced brand normalization
-function normalizeBrandName(brand: string): string {
-  return brand
-    .toLowerCase()
-    .replace(/[^\w\s]/g, '') // Remove punctuation
-    .replace(/\s+/g, ' ') // Normalize whitespace
-    .trim()
-}
+// Enhanced brand normalization - currently unused
+// function normalizeBrandName(brand: string): string {
+//   return brand
+//     .toLowerCase()
+//     .replace(/[^\w\s]/g, '') // Remove punctuation
+//     .replace(/\s+/g, ' ') // Normalize whitespace
+//     .trim()
+// }
 
 // Extract brand mentions from text with improved matching
 function extractBrands(text: string, brandNames: string[]) {
@@ -762,27 +762,27 @@ export async function POST(request: Request) {
     
     // SECURITY: Service role bypasses RLS - use only when absolutely necessary
     // Regular users should always use the standard client with RLS enabled
-    let serviceSupabase = null
-    if (isAdmin) {
-      try {
-        console.log('🔧 Creating service role client for admin operations')
-        const { createClient: createServiceClient } = await import('@supabase/supabase-js')
-        serviceSupabase = createServiceClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.SUPABASE_SERVICE_ROLE_KEY!,
-          {
-            auth: {
-              autoRefreshToken: false,
-              persistSession: false
-            }
-          }
-        )
-        console.log('✅ Service role client created - use with caution')
-      } catch (error) {
-        console.error('❌ Error creating service role client:', error instanceof Error ? error.message : 'Unknown error')
-        // Continue with regular client if service role fails
-      }
-    }
+    // let serviceSupabase = null
+    // if (isAdmin) {
+    //   try {
+    //     console.log('🔧 Creating service role client for admin operations')
+    //     const { createClient: createServiceClient } = await import('@supabase/supabase-js')
+    //     serviceSupabase = createServiceClient(
+    //       process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    //       process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    //       {
+    //         auth: {
+    //           autoRefreshToken: false,
+    //           persistSession: false
+    //         }
+    //       }
+    //     )
+    //     console.log('✅ Service role client created - use with caution')
+    //   } catch (error) {
+    //     console.error('❌ Error creating service role client:', error instanceof Error ? error.message : 'Unknown error')
+    //     // Continue with regular client if service role fails
+    //   }
+    // }
 
     console.log('👤 Processing request for authenticated user')
 
@@ -869,7 +869,7 @@ export async function POST(request: Request) {
             const brandNameToId: Record<string, string> = {}
             if (mentions.length > 0) {
               // Upsert all brands in parallel
-              const brandUpserts = await Promise.all(
+              await Promise.all(
                 mentions.map(async (mention) => {
                   const { data: brandData, error: brandError } = await dbClient
                     .from('brands')
@@ -939,7 +939,7 @@ export async function POST(request: Request) {
     console.log(`📊 Query results summary: ${successfulRuns.length} successful out of ${results.length} total runs`)
     
     // Log individual results
-    results.forEach((result, index) => {
+    results.forEach((result) => {
       if (result.status === 'fulfilled') {
         if (result.value.success) {
           console.log(`✅ Model ${result.value.model} succeeded with ${result.value.mentions?.length || 0} mentions`)

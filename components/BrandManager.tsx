@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from './auth-context'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,19 +25,7 @@ export function BrandManager({ onBrandsChange }: BrandManagerProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    if (user) {
-      fetchBrands()
-    }
-  }, [user])
-
-  useEffect(() => {
-    if (onBrandsChange) {
-      onBrandsChange(brands.map(b => b.name))
-    }
-  }, [brands, onBrandsChange])
-
-  const fetchBrands = async () => {
+  const fetchBrands = useCallback(async () => {
     if (!user) return // Don't fetch if no user is logged in
     
     const { data, error } = await supabase
@@ -52,7 +40,19 @@ export function BrandManager({ onBrandsChange }: BrandManagerProps) {
       console.log('Fetched brands for user:', data)
       setBrands(data || [])
     }
-  }
+  }, [user])
+
+  useEffect(() => {
+    if (user) {
+      fetchBrands()
+    }
+  }, [user, fetchBrands])
+
+  useEffect(() => {
+    if (onBrandsChange) {
+      onBrandsChange(brands.map(b => b.name))
+    }
+  }, [brands, onBrandsChange])
 
   const addBrand = async () => {
     if (!newBrand.trim() || !user) return
@@ -77,7 +77,7 @@ export function BrandManager({ onBrandsChange }: BrandManagerProps) {
         setBrands([...brands, data])
         setNewBrand('')
       }
-    } catch (err) {
+    } catch {
       setError('An error occurred')
     } finally {
       setLoading(false)

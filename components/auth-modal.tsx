@@ -25,9 +25,9 @@ export function AuthModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
         await signInWithPassword(email, password)
       }
       onClose()
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Auth error:', error)
-      setError(error.message || 'Authentication failed. Please try again.')
+      setError(error instanceof Error ? error.message : 'Authentication failed. Please try again.')
     } finally {
       setLoading(false)
     }

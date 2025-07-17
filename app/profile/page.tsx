@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/components/auth-context'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { supabase } from '@/lib/supabase'
 import { UserProfile, UserApiKey, ApiProvider, FreeQueryStatus, ApiProviderConfig } from '@/types'
-import { ArrowLeft, Home, BarChart3, User, LogOut } from 'lucide-react'
+import { ArrowLeft, Home, BarChart3, LogOut } from 'lucide-react'
 
 // Provider configurations
 const API_PROVIDERS: ApiProviderConfig[] = [
@@ -67,17 +67,7 @@ export default function ProfilePage() {
     phone: ''
   })
 
-  // Redirect if not authenticated
-  useEffect(() => {
-    if (loading) return
-    if (!user) {
-      router.push('/')
-      return
-    }
-    fetchProfileData()
-  }, [user, loading, router])
-
-  const fetchProfileData = async () => {
+  const fetchProfileData = useCallback(async () => {
     if (!user) return
 
     setIsLoading(true)
@@ -142,7 +132,17 @@ export default function ProfilePage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [user])
+
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (loading) return
+    if (!user) {
+      router.push('/')
+      return
+    }
+    fetchProfileData()
+  }, [user, loading, router, fetchProfileData])
 
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -186,16 +186,10 @@ export default function ProfilePage() {
       console.log('✅ Profile update successful:', data)
       setMessage({ type: 'success', text: 'Profile updated successfully' })
       await fetchProfileData() // Refresh data
-    } catch (error: any) {
-      console.error('❌ Error updating profile:', {
-        message: error?.message,
-        code: error?.code,
-        details: error?.details,
-        hint: error?.hint,
-        stack: error?.stack
-      })
+    } catch (error: unknown) {
+      console.error('❌ Error updating profile:', error)
       
-      const errorMessage = error?.message || 'Failed to update profile. Please try again.'
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update profile. Please try again.'
       setMessage({ 
         type: 'error', 
         text: `Failed to update profile: ${errorMessage}` 
@@ -354,7 +348,7 @@ export default function ProfilePage() {
           ].map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id as 'profile' | 'security' | 'api-keys' | 'usage')}
               className={`py-2 px-1 border-b-2 font-medium text-sm ${
                 activeTab === tab.id
                   ? 'border-blue-500 text-blue-600'
@@ -504,7 +498,7 @@ export default function ProfilePage() {
                   </div>
                   {!freeQueryStatus?.has_free_queries && (
                     <p className="text-sm text-orange-600 mt-2">
-                      You've used your free query. Add API keys to continue using the service.
+                      You&apos;ve used your free query. Add API keys to continue using the service.
                     </p>
                   )}
                 </div>
@@ -579,7 +573,7 @@ function ApiKeySection({
       } else {
         setValidationMessage(data.message || 'Failed to save API key')
       }
-    } catch (error) {
+    } catch {
       setValidationMessage('Error saving API key')
     } finally {
       setIsValidating(false)

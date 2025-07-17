@@ -43,7 +43,7 @@ async function validateOpenAIKey(apiKey: string): Promise<{ valid: boolean; mess
     } else {
       return { valid: false, message: 'Unable to validate OpenAI key' }
     }
-  } catch (error) {
+  } catch {
     return { valid: false, message: 'Network error validating OpenAI key' }
   }
 }
@@ -76,7 +76,7 @@ async function validateAnthropicKey(apiKey: string): Promise<{ valid: boolean; m
     } else {
       return { valid: false, message: 'Unable to validate Anthropic key' }
     }
-  } catch (error) {
+  } catch {
     return { valid: false, message: 'Network error validating Anthropic key' }
   }
 }
@@ -96,7 +96,7 @@ async function validateGoogleKey(apiKey: string): Promise<{ valid: boolean; mess
     } else {
       return { valid: false, message: 'Unable to validate Google AI key' }
     }
-  } catch (error) {
+  } catch {
     return { valid: false, message: 'Network error validating Google AI key' }
   }
 }
@@ -128,7 +128,7 @@ async function validatePerplexityKey(apiKey: string): Promise<{ valid: boolean; 
     } else {
       return { valid: false, message: 'Unable to validate Perplexity key' }
     }
-  } catch (error) {
+  } catch {
     return { valid: false, message: 'Network error validating Perplexity key' }
   }
 }
@@ -138,7 +138,7 @@ export async function POST(request: Request) {
   try {
     // Authentication check
     const supabase = await createClient()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
       return NextResponse.json(
@@ -238,11 +238,11 @@ export async function POST(request: Request) {
 }
 
 // GET - Retrieve API key information (not the actual keys)
-export async function GET(request: Request) {
+export async function GET() {
   try {
     // Authentication check
     const supabase = await createClient()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
       return NextResponse.json(
@@ -284,7 +284,7 @@ export async function DELETE(request: Request) {
   try {
     // Authentication check
     const supabase = await createClient()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
       return NextResponse.json(

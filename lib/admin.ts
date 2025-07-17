@@ -1,3 +1,5 @@
+import { SupabaseClient } from '@supabase/supabase-js'
+
 // Admin user configuration
 // Admin status is determined by database roles (preferred) or environment variables (fallback)
 // No hardcoded admin credentials for security
@@ -11,7 +13,7 @@ export function isAdminEmail(email: string): boolean {
 }
 
 // Client-side admin check (for client components)
-export async function isAdminUserClient(supabaseClient: any, userId: string): Promise<boolean> {
+export async function isAdminUserClient(supabaseClient: SupabaseClient, userId: string): Promise<boolean> {
   try {
     // Check database role first (preferred method)
     const { data: user, error } = await supabaseClient

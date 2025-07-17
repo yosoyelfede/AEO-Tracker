@@ -1,13 +1,14 @@
 {
   "extends": [
-    "next/core-web-vitals"
+    "next/core-web-vitals",
+    "next/typescript"
   ],
   "rules": {
-    "@typescript-eslint/no-unused-vars": "warn",
-    "@typescript-eslint/no-explicit-any": "warn",
-    "@next/next/no-html-link-for-pages": "warn",
-    "react/no-unescaped-entities": "warn",
-    "react-hooks/exhaustive-deps": "warn",
-    "prefer-const": "warn"
+    "@typescript-eslint/no-unused-vars": "error",
+    "@typescript-eslint/no-explicit-any": "error",
+    "@next/next/no-html-link-for-pages": "error",
+    "react/no-unescaped-entities": "error",
+    "react-hooks/exhaustive-deps": "error",
+    "prefer-const": "error"
   }
 }

@@ -10,7 +10,7 @@ export async function GET(request: Request) {
     const supabase = await createClient()
     
     try {
-      const { error, data } = await supabase.auth.exchangeCodeForSession(code)
+      const { error } = await supabase.auth.exchangeCodeForSession(code)
       
       // Check if we have a session, even if there was an error
       const { data: { session } } = await supabase.auth.getSession()

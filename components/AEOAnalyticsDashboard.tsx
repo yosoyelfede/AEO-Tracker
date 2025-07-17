@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -18,44 +18,21 @@ import {
   PieChart,
   Pie,
   Cell,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar,
-  ComposedChart,
-  Area,
-  AreaChart
+  ComposedChart
 } from 'recharts'
 import { 
-  CalendarDays, 
-  TrendingUp, 
-  TrendingDown, 
-  Activity, 
-  Eye, 
-  Calendar, 
-  ArrowLeft, 
-  Clock,
   Filter,
   Target,
   Zap,
   Award,
-  BarChart3,
-  PieChart as PieChartIcon,
-  Radar as RadarIcon,
-  Info,
-  ThumbsUp,
-  ThumbsDown,
-  Minus,
-  Crown,
   Users,
   Brain,
   CheckCircle,
-  XCircle
+  ArrowLeft
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/auth-context'
-import { isAdminEmail } from '@/lib/admin'
+
 import { QueryResults } from '@/components/QueryResults'
 
 // Types for enhanced analytics
@@ -121,12 +98,56 @@ interface TimeSeriesDataPoint {
   [brandName: string]: number | string // Dynamic brand columns
 }
 
+interface QueryResult {
+  id: string
+  model: string
+  response_text: string
+  created_at: string
+  mentions: {
+    brand: string
+    position: number
+    context: string
+  }[]
+  success: true
+}
+
+interface QueryError {
+  model: string
+  success: false
+  error: string
+}
+
+interface AnalyticsQuery {
+  id: string
+  prompt: string
+  created_at: string
+  brand_list_id: string
+  runs?: {
+    id: string
+    model: string
+    raw_response: string
+    created_at: string
+    mentions?: {
+      rank: number
+      brands: {
+        name: string
+      }[]
+    }[]
+  }[]
+}
+
 interface AEOAnalyticsDashboardProps {
   refreshTrigger?: number
 }
 
 // Enhanced sentiment analysis
-const analyzeQuerySentiment = (query: string): { sentiment: 'positive' | 'negative' | 'neutral', score: number, keywords: string[] } => {
+interface QuerySentiment {
+  sentiment: 'positive' | 'negative' | 'neutral'
+  score: number
+  keywords: string[]
+}
+
+const analyzeQuerySentiment = (query: string): QuerySentiment => {
   const positiveKeywords = ['best', 'top', 'great', 'excellent', 'amazing', 'good', 'favorite', 'recommend', 'quality', 'premium', 'mejor', 'bueno']
   const negativeKeywords = ['worst', 'bad', 'terrible', 'awful', 'poor', 'cheap', 'avoid', 'problems', 'issues', 'complaints', 'peor', 'malo']
   
@@ -192,22 +213,10 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
   const [selectedHistoricalQuery, setSelectedHistoricalQuery] = useState<{
     id: string
     prompt: string
-    results: any[]
+    results: (QueryResult | QueryError)[]
   } | null>(null)
 
-  useEffect(() => {
-    if (user) {
-      fetchBrandLists()
-    }
-  }, [user])
-
-  useEffect(() => {
-    if (selectedBrandListId) {
-      fetchAnalyticsData()
-    }
-  }, [selectedBrandListId, timeRange, refreshTrigger])
-
-  const fetchBrandLists = async () => {
+  const fetchBrandLists = useCallback(async () => {
     if (!user) return
     
     setLoading(true)
@@ -235,73 +244,14 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
       // Auto-select first list if none selected
       if (!selectedBrandListId && lists.length > 0) {
         setSelectedBrandListId(lists[0].id)
-        // Auto-select all brands initially
-        setSelectedBrands(lists[0].items.map(item => item.brand_name))
+        const brandNames = lists[0].items.map(item => item.brand_name)
+        setSelectedBrands(brandNames)
       }
     }
     setLoading(false)
-  }
+  }, [user, selectedBrandListId])
 
-  const fetchAnalyticsData = async () => {
-    if (!selectedBrandListId || !user) return
-
-    setLoading(true)
-
-    try {
-      // Calculate date range
-      const endDate = new Date()
-      const startDate = new Date()
-      const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90
-      startDate.setDate(endDate.getDate() - days)
-
-      // Admin access check
-      const isAdmin = user?.email && isAdminEmail(user.email)
-      const userIds = isAdmin ? [user.id] : [user?.id].filter(Boolean)
-
-      // Fetch comprehensive query data
-      const { data: queries, error } = await supabase
-        .from('queries')
-        .select(`
-          id,
-          prompt,
-          created_at,
-          brand_list_id,
-          runs (
-            id,
-            model,
-            raw_response,
-            created_at,
-            mentions (
-              rank,
-              brands (
-                name
-              )
-            )
-          )
-        `)
-        .eq('brand_list_id', selectedBrandListId)
-        .in('user_id', userIds)
-        .gte('created_at', startDate.toISOString())
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error('Error fetching analytics data:', error)
-        return
-      }
-
-      console.log('Fetched queries for analytics:', JSON.stringify(queries, null, 2))
-
-      // Process enhanced analytics
-      processEnhancedAnalytics(queries || [])
-
-    } catch (error) {
-      console.error('Error:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const processEnhancedAnalytics = (queries: any[]) => {
+  const processEnhancedAnalytics = useCallback((queries: AnalyticsQuery[]) => {
     const selectedBrandList = brandLists.find(list => list.id === selectedBrandListId)
     const allBrandNames = selectedBrandList?.items.map(item => item.brand_name) || []
     
@@ -329,7 +279,7 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
       mentions: number
       brands: Set<string>
       ranks: number[]
-      sentiment: any
+      sentiment: QuerySentiment
     } } = {}
 
     // Initialize brand data
@@ -346,7 +296,6 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
     })
 
     const totalQueries = queries.length
-    const totalRuns = queries.reduce((sum, q) => sum + (q.runs?.length || 0), 0)
 
     // Process all data
     queries.forEach(query => {
@@ -369,7 +318,7 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
         brandStats[brand].totalQueries = totalQueries
       })
 
-      query.runs?.forEach((run: any) => {
+      query.runs?.forEach((run) => {
         const model = run.model
         
         // Initialize model stats
@@ -377,9 +326,9 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
           modelStats[model] = { brands: {}, totalMentions: 0 }
         }
 
-        run.mentions?.forEach((mention: any) => {
-          const brandName = mention.brands?.name
-          if (brandNames.includes(brandName)) {
+        run.mentions?.forEach((mention) => {
+          const brandName = mention.brands?.[0]?.name
+          if (brandName && brandNames.includes(brandName)) {
             const rank = mention.rank
 
             // Update brand stats
@@ -517,10 +466,11 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
           const brandARanks: number[] = []
           const brandBRanks: number[] = []
 
-          query.runs?.forEach((run: any) => {
-            run.mentions?.forEach((mention: any) => {
-              if (mention.brands?.name === brandA) brandARanks.push(mention.rank)
-              if (mention.brands?.name === brandB) brandBRanks.push(mention.rank)
+          query.runs?.forEach((run) => {
+            run.mentions?.forEach((mention) => {
+              const brandName = mention.brands?.[0]?.name
+              if (brandName === brandA) brandARanks.push(mention.rank)
+              if (brandName === brandB) brandBRanks.push(mention.rank)
             })
           })
 
@@ -574,7 +524,76 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
       })
 
     setTimeSeriesData(timeSeriesArray)
-  }
+  }, [brandLists, selectedBrandListId, selectedBrands])
+
+  const fetchAnalyticsData = useCallback(async () => {
+    if (!selectedBrandListId || !user) return
+    
+    setLoading(true)
+    try {
+      // Calculate date range
+      const now = new Date()
+      const daysAgo = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90
+      const startDate = new Date(now.getTime() - (daysAgo * 24 * 60 * 60 * 1000)).toISOString()
+
+      // Fetch queries for the selected brand list within the time range
+      const { data: queries, error } = await supabase
+        .from('queries')
+        .select(`
+          id,
+          prompt,
+          created_at,
+          brand_list_id,
+          runs (
+            id,
+            model,
+            raw_response,
+            created_at,
+            mentions (
+              rank,
+              brands (
+                name
+              )
+            )
+          )
+        `)
+        .eq('brand_list_id', selectedBrandListId)
+        .gte('created_at', startDate)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching analytics data:', error)
+        return
+      }
+
+      if (queries && queries.length > 0) {
+        processEnhancedAnalytics(queries)
+      } else {
+        // Reset all metrics if no data
+        setCoreBrandMetrics([])
+        setModelPerformance([])
+        setQueryEffectiveness([])
+        setCompetitiveAnalysis([])
+        setTimeSeriesData([])
+      }
+    } catch (error) {
+      console.error('Error in fetchAnalyticsData:', error)
+    } finally {
+      setLoading(false)
+    }
+  }, [selectedBrandListId, timeRange, user, processEnhancedAnalytics])
+
+  useEffect(() => {
+    if (user) {
+      fetchBrandLists()
+    }
+  }, [user, fetchBrandLists])
+
+  useEffect(() => {
+    if (selectedBrandListId) {
+      fetchAnalyticsData()
+    }
+  }, [selectedBrandListId, timeRange, refreshTrigger, fetchAnalyticsData])
 
   const toggleBrandFilter = (brand: string) => {
     setSelectedBrands(prev => {
@@ -725,7 +744,7 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
           </div>
           
           <div className="flex flex-wrap gap-2">
-            {selectedBrandList?.items.map((item, index) => {
+            {selectedBrandList?.items.map((item) => {
               const isSelected = selectedBrands.includes(item.brand_name)
               return (
                 <Badge
@@ -733,8 +752,8 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
                   variant={isSelected ? "default" : "outline"}
                   className="cursor-pointer hover:bg-gray-100"
                   style={{ 
-                    backgroundColor: isSelected ? BRAND_COLORS[index % BRAND_COLORS.length] : undefined,
-                    borderColor: BRAND_COLORS[index % BRAND_COLORS.length]
+                    backgroundColor: isSelected ? BRAND_COLORS[selectedBrandList?.items.indexOf(item) % BRAND_COLORS.length] : undefined,
+                    borderColor: BRAND_COLORS[selectedBrandList?.items.indexOf(item) % BRAND_COLORS.length]
                   }}
                   onClick={() => toggleBrandFilter(item.brand_name)}
                 >
@@ -761,7 +780,7 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
               key={tab.id}
               variant={activeMetricTab === tab.id ? 'default' : 'ghost'}
               size="sm"
-              onClick={() => setActiveMetricTab(tab.id as any)}
+              onClick={() => setActiveMetricTab(tab.id as 'overview' | 'models' | 'queries' | 'competitive')}
               className="flex-1"
             >
               <Icon className="h-4 w-4 mr-2" />
@@ -853,13 +872,13 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredCoreBrandMetrics.map((brand, index) => (
+                    {filteredCoreBrandMetrics.map((brand) => (
                       <tr key={brand.brand} className="border-b hover:bg-gray-50">
                         <td className="p-2">
                           <div className="flex items-center gap-2">
                             <div 
                               className="w-3 h-3 rounded-full"
-                              style={{ backgroundColor: BRAND_COLORS[index % BRAND_COLORS.length] }}
+                              style={{ backgroundColor: BRAND_COLORS[filteredCoreBrandMetrics.indexOf(brand) % BRAND_COLORS.length] }}
                             />
                             <span className="font-medium">{brand.brand}</span>
                           </div>
@@ -906,8 +925,8 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
                       outerRadius={100}
                       label={({ brand, shareOfVoice }) => `${brand}: ${shareOfVoice.toFixed(1)}%`}
                     >
-                      {filteredCoreBrandMetrics.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={BRAND_COLORS[index % BRAND_COLORS.length]} />
+                      {filteredCoreBrandMetrics.map((entry) => (
+                        <Cell key={`cell-${filteredCoreBrandMetrics.indexOf(entry)}`} fill={BRAND_COLORS[filteredCoreBrandMetrics.indexOf(entry) % BRAND_COLORS.length]} />
                       ))}
                     </Pie>
                     <Tooltip />
@@ -952,12 +971,12 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
                   <YAxis />
                   <Tooltip />
                   <Legend />
-                  {selectedBrands.map((brand, index) => (
+                  {selectedBrands.map((brand) => (
                     <Line
                       key={brand}
                       type="monotone"
                       dataKey={brand}
-                      stroke={BRAND_COLORS[index % BRAND_COLORS.length]}
+                      stroke={BRAND_COLORS[selectedBrands.indexOf(brand) % BRAND_COLORS.length]}
                       strokeWidth={2}
                       dot={{ r: 4 }}
                     />
@@ -1044,7 +1063,7 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
                     <tbody>
                       {model.brands
                         .filter(brand => selectedBrands.length === 0 || selectedBrands.includes(brand.brand))
-                        .map((brand, index) => (
+                        .map((brand) => (
                         <tr key={brand.brand} className="border-b hover:bg-gray-50">
                           <td className="p-2 font-medium">{brand.brand}</td>
                           <td className="text-right p-2">{brand.mentions}</td>
@@ -1181,7 +1200,7 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
                       </tr>
                     </thead>
                     <tbody>
-                      {competitiveAnalysis.map((comp, index) => (
+                      {competitiveAnalysis.map((comp) => (
                         <tr key={`${comp.brandA}-${comp.brandB}`} className="border-b hover:bg-gray-50">
                           <td className="p-2">
                             <div className="flex items-center gap-2">
@@ -1242,7 +1261,7 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
                       tick={{ fontSize: 12 }}
                     />
                     <Tooltip 
-                      formatter={(value: any) => [`${value.toFixed(1)}%`, 'Win Rate']}
+                      formatter={(value: number) => [`${value.toFixed(1)}%`, 'Win Rate']}
                       labelFormatter={(label) => `Matchup: ${label}`}
                     />
                     <Bar dataKey="winRate" fill="#8884d8" />
