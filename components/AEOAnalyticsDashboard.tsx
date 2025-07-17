@@ -510,7 +510,7 @@ export function AEOAnalyticsDashboard({ refreshTrigger }: AEOAnalyticsDashboardP
         
         let headToHeadWins = 0
         let totalComparisons = 0
-        let rankDifferences: number[] = []
+        const rankDifferences: number[] = []
 
         // Compare brands in each query where both appear
         queries.forEach(query => {

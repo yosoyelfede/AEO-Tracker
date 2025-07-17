@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 export default function AuthError() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -15,12 +17,12 @@ export default function AuthError() {
             <li>There was a network issue</li>
           </ul>
           <div className="mt-6">
-            <a
+            <Link
               href="/"
               className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
               Return to Home
-            </a>
+            </Link>
           </div>
         </div>
       </div>
