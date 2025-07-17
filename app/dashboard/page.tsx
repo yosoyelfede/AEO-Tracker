@@ -126,9 +126,13 @@ export default function Dashboard() {
       console.log('🔍 API Response:', data) // Debug log
 
       if (data.success) {
+        console.log('🔍 Raw results before filtering:', data.results) // Debug log
         // Transform the API response to match our QueryResult interface
         const transformedResults = data.results
-          .filter((result: any) => result.success)
+          .filter((result: any) => {
+            console.log('🔍 Result success check:', result.success, result) // Debug log
+            return result.success
+          })
           .map((result: any) => {
             console.log('🔍 Individual result:', result) // Debug log
             return {
