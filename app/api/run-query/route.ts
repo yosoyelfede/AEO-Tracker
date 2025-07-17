@@ -249,13 +249,23 @@ export async function POST(request: Request) {
     const referer = request.headers.get('referer')
     const allowedOrigins = [
       process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : null,
+      process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null, // Vercel automatic env
+      'https://aeo-tracker.vercel.app', // Production domain
       'http://localhost:3000', // Development
       'https://localhost:3000' // Development with HTTPS
     ].filter(Boolean)
     
     // Check if request comes from allowed origin
+    console.log('🔍 CORS Check:', { 
+      origin, 
+      referer, 
+      allowedOrigins,
+      VERCEL_URL: process.env.VERCEL_URL,
+      NEXT_PUBLIC_VERCEL_URL: process.env.NEXT_PUBLIC_VERCEL_URL
+    })
+    
     if (!origin || !allowedOrigins.some(allowed => origin.startsWith(allowed!))) {
-      console.log('❌ CSRF: Invalid origin detected')
+      console.log('❌ CSRF: Invalid origin detected', { origin, allowedOrigins })
       return NextResponse.json(
         { error: 'Invalid request origin' },
         { status: 403 }
