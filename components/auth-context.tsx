@@ -80,7 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     
     // If email confirmation is required, show message
     if (data.user && !data.session) {
-      throw new Error('Please check your email and click the confirmation link to complete registration. Note: If emails are not configured in Supabase, you may need to enable email confirmations in your Supabase dashboard under Authentication > Settings.')
+      throw new Error('Registration successful! Please check your email and click the confirmation link to complete your account setup.')
     }
     
     return data
