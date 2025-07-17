@@ -123,21 +123,26 @@ export default function Dashboard() {
       }
 
       const data = await response.json()
+      console.log('🔍 API Response:', data) // Debug log
 
       if (data.success) {
         // Transform the API response to match our QueryResult interface
         const transformedResults = data.results
           .filter((result: any) => result.success)
-          .map((result: any) => ({
-            id: result.runId,
-            model: result.model,
-            response_text: result.response_text || '',
-            created_at: new Date().toISOString(),
-            mentions: result.mentions || [],
-            api_key_source: result.api_key_source,
-            used_free_query: result.used_free_query
-          }))
+          .map((result: any) => {
+            console.log('🔍 Individual result:', result) // Debug log
+            return {
+              id: result.runId || result.id || crypto.randomUUID(),
+              model: result.model,
+              response_text: result.response_text || result.responseText || '',
+              created_at: new Date().toISOString(),
+              mentions: result.mentions || [],
+              api_key_source: result.api_key_source,
+              used_free_query: result.used_free_query
+            }
+          })
 
+        console.log('🔍 Transformed results:', transformedResults) // Debug log
         setResults(transformedResults)
         fetchQueries() // Refresh the queries list
         
