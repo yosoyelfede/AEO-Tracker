@@ -131,7 +131,7 @@ export default function Dashboard() {
         const transformedResults = data.results
           .filter((result: any) => {
             console.log('🔍 Result success check:', result.success, 'Model:', result.model, 'Error:', result.error) // Debug log
-            return true // TEMPORARILY SHOW ALL RESULTS INCLUDING FAILURES
+            return result.success // Only show successful results
           })
           .map((result: any) => {
             console.log('🔍 Individual result:', result) // Debug log
