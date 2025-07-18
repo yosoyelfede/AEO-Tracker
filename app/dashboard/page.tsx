@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { QueryResults } from '@/components/QueryResults'
-import { AEOAnalyticsDashboard } from '@/components/AEOAnalyticsDashboard'
+import { EnhancedAnalyticsDashboard } from '@/components/EnhancedAnalyticsDashboard'
 import { BrandListManager } from '@/components/BrandListManager'
 import { supabase } from '@/lib/supabase'
 import { Query, ApiQueryResponse, ApiQueryResult, ApiMention, HistoricalQuery } from '@/types'
@@ -504,7 +504,7 @@ export default function Dashboard() {
             )}
           </div>
         ) : (
-          <AEOAnalyticsDashboard 
+          <EnhancedAnalyticsDashboard 
             refreshTrigger={analyticsRefreshTrigger}
           />
         )}

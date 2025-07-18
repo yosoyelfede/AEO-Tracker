@@ -56,7 +56,8 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/dashboard') ||
     request.nextUrl.pathname.startsWith('/profile') ||
     request.nextUrl.pathname.startsWith('/api/run-query') ||
-    request.nextUrl.pathname.startsWith('/api/profile')
+    request.nextUrl.pathname.startsWith('/api/profile') ||
+    request.nextUrl.pathname.startsWith('/api/analytics')
   )) {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = '/'
