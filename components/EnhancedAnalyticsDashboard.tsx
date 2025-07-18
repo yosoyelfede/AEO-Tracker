@@ -1,14 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { 
   Target,
-  TrendingUp,
-  BarChart3,
-  Activity,
   RefreshCw
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -32,7 +29,7 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
   const [selectedBrandListId, setSelectedBrandListId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const fetchBrandLists = async () => {
+  const fetchBrandLists = useCallback(async () => {
     if (!user) return
     
     setLoading(true)
@@ -63,17 +60,17 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
       }
     }
     setLoading(false)
-  }
+  }, [user, selectedBrandListId])
 
   useEffect(() => {
     fetchBrandLists()
-  }, [user, selectedBrandListId])
+  }, [user, selectedBrandListId, fetchBrandLists])
 
   useEffect(() => {
     if (refreshTrigger) {
       fetchBrandLists()
     }
-  }, [refreshTrigger])
+  }, [refreshTrigger, fetchBrandLists])
 
   if (loading) {
     return (

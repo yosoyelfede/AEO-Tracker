@@ -18,7 +18,7 @@ import {
   AlertCircle
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { motion, AnimatePresence } from 'framer-motion'
+
 
 interface BrandMention {
   id: string
@@ -52,7 +52,7 @@ export default function AdvancedCharts({ refreshTrigger, selectedBrandListId }: 
   const [error, setError] = useState<string | null>(null)
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('30d')
 
-  const fetchAnalyticsData = async () => {
+  const fetchAnalyticsData = useCallback(async () => {
     if (!selectedBrandListId) {
       setData(null)
       setLoading(false)
@@ -157,7 +157,7 @@ export default function AdvancedCharts({ refreshTrigger, selectedBrandListId }: 
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedBrandListId, timeRange])
 
   useEffect(() => {
     fetchAnalyticsData()
@@ -420,7 +420,7 @@ export default function AdvancedCharts({ refreshTrigger, selectedBrandListId }: 
           </CardHeader>
           <CardContent>
             <div className="h-64 flex items-end justify-between space-x-2">
-              {data.mentionsOverTime.map((item, index) => {
+              {data.mentionsOverTime.map((item) => {
                 const maxMentions = Math.max(...data.mentionsOverTime.map(d => d.mentions))
                 const height = maxMentions > 0 ? (item.mentions / maxMentions) * 100 : 0
                 

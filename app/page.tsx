@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -17,6 +18,7 @@ import {
   Activity
 } from 'lucide-react'
 import { motion } from 'framer-motion'
+import { useAuth } from '@/components/auth-context'
 
 const features = [
   {
@@ -70,6 +72,30 @@ const stats = [
 ]
 
 export default function Home() {
+  const { signInWithPassword } = useAuth()
+  const [formData, setFormData] = useState({
+    email: 'federxv@gmail.com',
+    password: 'adminpassword'
+  })
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsLoading(true)
+    setError('')
+
+    try {
+      await signInWithPassword(formData.email, formData.password)
+      // Redirect to dashboard after successful sign in
+      window.location.href = '/dashboard'
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Sign in failed')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       {/* Navigation */}
@@ -413,7 +439,12 @@ export default function Home() {
               <div className="bg-blue-50 rounded-lg p-4 mb-6">
                 <p className="text-blue-800 font-medium">Free 14-day trial</p>
               </div>
-              <div className="space-y-4">
+              <form onSubmit={handleSignIn} className="space-y-4">
+                {error && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-red-600 text-sm">{error}</p>
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
                   <div className="relative">
@@ -421,7 +452,8 @@ export default function Home() {
                       type="email"
                       placeholder="Enter your email"
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      defaultValue="federxv@gmail.com"
+                      value={formData.email}
+                      onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
                     />
                     <Search className="w-5 h-5 text-gray-400 absolute right-3 top-3" />
                   </div>
@@ -433,18 +465,32 @@ export default function Home() {
                       type="password"
                       placeholder="Enter your password"
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      defaultValue="adminpassword"
+                      value={formData.password}
+                      onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
                     />
-                    <button className="absolute right-3 top-3">
+                    <button type="button" className="absolute right-3 top-3">
                       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 text-gray-400"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h18a3 3 0 1 0-3-3"/></svg>
                     </button>
                   </div>
                 </div>
-                <Button className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
-                  Sign In
-                  <ArrowRight className="w-5 h-5 ml-2" />
+                <Button 
+                  type="submit"
+                  className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <div className="flex items-center">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                      Signing In...
+                    </div>
+                  ) : (
+                    <>
+                      Sign In
+                      <ArrowRight className="w-5 h-5 ml-2" />
+                    </>
+                  )}
                 </Button>
-              </div>
+              </form>
               <div className="text-center mt-6">
                 <p className="text-gray-600">or</p>
                 <Button variant="outline" className="w-full mt-4">

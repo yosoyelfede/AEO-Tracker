@@ -495,14 +495,36 @@ export default function Dashboard() {
                       <label htmlFor="query" className="block text-sm font-semibold text-slate-700">
                         Your Query
                       </label>
-                      <textarea
-                        id="query"
-                        rows={4}
-                        className="w-full px-4 py-3 border border-slate-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200 resize-none bg-white/50 backdrop-blur-sm"
-                        placeholder="e.g., What's the best restaurant in Santiago? or Which retail store has the best deals?"
-                        value={currentQuery}
-                        onChange={(e) => setCurrentQuery(e.target.value)}
-                      />
+                      <div className="relative">
+                        <textarea
+                          id="query"
+                          rows={4}
+                          className="w-full px-4 py-3 pr-20 border border-slate-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200 resize-none bg-white/50 backdrop-blur-sm"
+                          placeholder="e.g., What's the best restaurant in Santiago? or Which retail store has the best deals? (Press Cmd+Enter to run)"
+                          value={currentQuery}
+                          onChange={(e) => setCurrentQuery(e.target.value)}
+                          onKeyDown={(e) => {
+                            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                              e.preventDefault()
+                              if (currentQuery.trim() && selectedModels.length > 0 && selectedBrandListId && selectedBrandNames.length > 0 && !isRunning) {
+                                runQuery()
+                              }
+                            }
+                          }}
+                        />
+                        <Button
+                          onClick={runQuery}
+                          disabled={!currentQuery.trim() || selectedModels.length === 0 || isRunning || !selectedBrandListId || selectedBrandNames.length === 0}
+                          className="absolute right-2 top-2 h-10 px-4 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-lg shadow-primary/25 rounded-lg"
+                          size="sm"
+                        >
+                          {isRunning ? (
+                            <RefreshCw className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Play className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
                     </div>
 
                     {/* Enhanced Model Selection */}
