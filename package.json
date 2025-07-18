@@ -1,0 +1,15 @@
+{
+  "name": "aeo-project",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "cd aeo-tracker && npm run dev",
+    "build": "cd aeo-tracker && npm run build",
+    "start": "cd aeo-tracker && npm run start",
+    "lint": "cd aeo-tracker && npm run lint",
+    "install-deps": "cd aeo-tracker && npm install"
+  },
+  "workspaces": [
+    "aeo-tracker"
+  ]
+} 

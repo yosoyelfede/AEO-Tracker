@@ -1,0 +1,7 @@
+{
+  "buildCommand": "cd aeo-tracker && npm run build",
+  "outputDirectory": "aeo-tracker/.next",
+  "installCommand": "cd aeo-tracker && npm install",
+  "framework": "nextjs",
+  "rootDirectory": "aeo-tracker"
+} 
