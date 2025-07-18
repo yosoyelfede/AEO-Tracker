@@ -12,7 +12,7 @@ When a brand list was deleted, queries related to that brand list were still app
 
 ### 1. Enhanced Analytics Filtering
 
-The `fetchAnalyticsData` function in `AEOAnalyticsDashboard.tsx` now includes:
+The `fetchAnalyticsData` function in `EnhancedAnalyticsDashboard.tsx` now includes:
 
 - **Brand list existence verification**: Before fetching queries, it verifies that the selected brand list still exists
 - **Automatic cleanup**: If the selected brand list no longer exists, it clears the selection and analytics data

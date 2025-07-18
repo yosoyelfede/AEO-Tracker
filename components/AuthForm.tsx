@@ -30,7 +30,7 @@ interface FormErrors {
 }
 
 export default function AuthForm() {
-  const { signInWithPassword, signUpWithPassword } = useAuth()
+  const { signInWithPassword, signUpWithPassword, signInWithGoogle } = useAuth()
   const [isSignUp, setIsSignUp] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -83,6 +83,20 @@ export default function AuthForm() {
       } else {
         await signInWithPassword(formData.email, formData.password)
       }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred'
+      setErrors({ general: errorMessage })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true)
+    setErrors({})
+
+    try {
+      await signInWithGoogle()
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred'
       setErrors({ general: errorMessage })
@@ -210,7 +224,13 @@ export default function AuthForm() {
 
                 <div className="text-center">
                   <p className="text-gray-600">or</p>
-                  <Button variant="outline" className="w-full mt-4">
+                  <Button 
+                    type="button"
+                    variant="outline" 
+                    className="w-full mt-4"
+                    onClick={handleGoogleSignIn}
+                    disabled={isLoading}
+                  >
                     <div className="w-5 h-5 mr-2">G</div>
                     Continue with Google
                   </Button>

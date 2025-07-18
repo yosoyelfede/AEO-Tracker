@@ -1,481 +1,574 @@
-import { format, subDays, parseISO, differenceInDays } from 'date-fns'
+// Analytics calculation functions based on finalanalytics.md specification
 
-// Enhanced Analytics Types
-export interface AnalyticsProcessor {
-  calculateBrandMetrics: (data: QueryData[]) => BrandMetrics
-  calculateCompetitiveAnalysis: (data: QueryData[]) => CompetitiveMetrics
-  calculateTrends: (data: QueryData[], timeRange: TimeRange) => TrendData
-  generateForecasts: (historicalData: QueryData[]) => ForecastData
-}
+import {
+  AnalyticsDataPoint,
+  CoverageRate,
+  ShareOfVoice,
+  AverageMentionRank,
+  SentimentScore,
+  SentimentWeightedSoV,
+  AnswerRichness,
+  CitationPresence,
+  ModelWinRate,
+  CompetitiveWinRate,
+  QueryEffectiveness,
+  VolatilityIndex,
+  TimeRange,
+  ModelType,
+  ComprehensiveAnalytics,
+  AnalyticsSummary
+} from '@/types/analytics'
 
-export interface QueryData {
-  id: string
-  prompt: string
-  created_at: string
-  brand_list_id: string
-  runs: {
-    id: string
-    model: string
-    raw_response: string
-    created_at: string
-    mentions: {
-      rank: number
-      brands: {
-        name: string
-      }
-    }[]
-  }[]
-}
-
-export interface BrandMetrics {
-  brand: string
-  totalMentions: number
-  mentionRate: number
-  averageRank: number
-  bestRank: number
-  worstRank: number
-  shareOfVoice: number
-  modelCoverage: string[]
-  rankingConsistency: number
-  topPerformerRate: number
-  mentionVelocity: number // Mentions per day
-  rankingStability: number // Coefficient of variation
-  marketPenetration: number // Presence across query categories
-  trend: 'up' | 'down' | 'stable'
-  trendPercentage: number
-  dailyMentions: { [date: string]: number }
-  queryCategories: { [category: string]: number }
-}
-
-export interface CompetitiveMetrics {
-  brandA: string
-  brandB: string
-  headToHeadWins: number
-  totalComparisons: number
-  winRate: number
-  avgRankDifference: number
-  competitiveIntensity: number
-  marketPosition: number
-}
-
-export interface TrendData {
-  period: string
-  data: {
-    date: string
-    mentions: number
-    avgRank: number
-    shareOfVoice: number
-  }[]
-  trend: 'up' | 'down' | 'stable'
-  percentageChange: number
-}
-
-export interface ForecastData {
-  nextPeriod: {
-    mentions: number
-    avgRank: number
-    shareOfVoice: number
-  }
-  confidence: number
-  factors: string[]
-}
-
-export interface QueryEffectivenessMetrics {
-  queryId: string
-  query: string
-  totalMentions: number
-  uniqueBrands: number
-  avgRanking: number
-  effectivenessScore: number
-  sentiment: 'positive' | 'negative' | 'neutral'
-  keywords: string[]
-  successRate: number
-  queryType: string
-  createdAt: string
-}
-
-export interface TimeRange {
-  start: Date
-  end: Date
-  days: number
-}
-
-// Statistical Utility Functions
-export const calculateStandardDeviation = (values: number[]): number => {
-  if (values.length === 0) return 0
-  const mean = values.reduce((sum, val) => sum + val, 0) / values.length
-  const squaredDiffs = values.map(val => Math.pow(val - mean, 2))
-  const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / values.length
-  return Math.sqrt(variance)
-}
-
-export const calculatePercentile = (values: number[], percentile: number): number => {
-  if (values.length === 0) return 0
-  const sorted = [...values].sort((a, b) => a - b)
-  const index = Math.ceil((percentile / 100) * sorted.length) - 1
-  return sorted[Math.max(0, index)]
-}
-
-export const calculateCoefficientOfVariation = (values: number[]): number => {
-  if (values.length === 0) return 0
-  const mean = values.reduce((sum, val) => sum + val, 0) / values.length
-  if (mean === 0) return 0
-  const stdDev = calculateStandardDeviation(values)
-  return (stdDev / mean) * 100
-}
-
-// Enhanced Analytics Calculation Functions
-export const calculateBrandMetrics = (data: QueryData[], brandNames: string[]): BrandMetrics[] => {
-  const brandStats: { [brand: string]: {
-    mentions: number
-    ranks: number[]
-    models: Set<string>
-    queriesAppeared: Set<string>
-    totalQueries: number
-    firstRanks: number
-    dailyMentions: { [date: string]: number }
-    queryCategories: { [category: string]: number }
-    dates: string[]
-  } } = {}
-
-  // Initialize brand data
-  brandNames.forEach(brand => {
-    brandStats[brand] = {
-      mentions: 0,
-      ranks: [],
-      models: new Set(),
-      queriesAppeared: new Set(),
-      totalQueries: 0,
-      firstRanks: 0,
-      dailyMentions: {},
-      queryCategories: {},
-      dates: []
-    }
-  })
-
-  const totalQueries = data.length
-
-  // Process all data
-  data.forEach(query => {
-    const date = new Date(query.created_at).toISOString().split('T')[0]
-    const queryCategory = categorizeQuery(query.prompt)
-    
-    // Track total queries per brand
-    brandNames.forEach(brand => {
-      brandStats[brand].totalQueries = totalQueries
-      if (!brandStats[brand].queryCategories[queryCategory]) {
-        brandStats[brand].queryCategories[queryCategory] = 0
-      }
-    })
-
-    query.runs?.forEach(run => {
-      const model = run.model
-      
-      run.mentions?.forEach(mention => {
-        const brandName = mention.brands?.name
-        if (brandNames.includes(brandName)) {
-          const rank = mention.rank
-
-          // Update brand stats
-          brandStats[brandName].mentions++
-          brandStats[brandName].ranks.push(rank)
-          brandStats[brandName].models.add(model)
-          brandStats[brandName].queriesAppeared.add(query.id)
-          brandStats[brandName].queryCategories[queryCategory]++
-          if (rank === 1) brandStats[brandName].firstRanks++
-
-          // Daily mentions for time series
-          if (!brandStats[brandName].dailyMentions[date]) {
-            brandStats[brandName].dailyMentions[date] = 0
-          }
-          brandStats[brandName].dailyMentions[date]++
-          brandStats[brandName].dates.push(date)
-        }
-      })
-    })
-  })
-
-  // Calculate total mentions for share of voice
-  const totalMentions = Object.values(brandStats).reduce((sum, brand) => sum + brand.mentions, 0)
-
-  // Build enhanced brand metrics
-  return brandNames.map(brand => {
-    const stats = brandStats[brand]
-    const avgRank = stats.ranks.length > 0 ? stats.ranks.reduce((sum, rank) => sum + rank, 0) / stats.ranks.length : 0
-    const mentionRate = stats.totalQueries > 0 ? (stats.queriesAppeared.size / stats.totalQueries) * 100 : 0
-    const shareOfVoice = totalMentions > 0 ? (stats.mentions / totalMentions) * 100 : 0
-    const topPerformerRate = stats.mentions > 0 ? (stats.firstRanks / stats.mentions) * 100 : 0
-    
-    // Enhanced metrics
-    const rankingConsistency = calculateStandardDeviation(stats.ranks)
-    const rankingStability = calculateCoefficientOfVariation(stats.ranks)
-    const mentionVelocity = stats.dates.length > 0 ? stats.mentions / (differenceInDays(new Date(), parseISO(stats.dates[0])) + 1) : 0
-    
-    // Market penetration (presence across query categories)
-    const totalCategories = Object.keys(stats.queryCategories).length
-    const marketPenetration = totalCategories > 0 ? (totalCategories / 5) * 100 : 0 // Assuming 5 main categories
-
-    // Trend calculation (simplified - would need historical comparison)
-    const trend = 'stable' as const
-    const trendPercentage = 0
-
-    return {
-      brand,
-      totalMentions: stats.mentions,
-      mentionRate,
-      averageRank: avgRank,
-      bestRank: stats.ranks.length > 0 ? Math.min(...stats.ranks) : 0,
-      worstRank: stats.ranks.length > 0 ? Math.max(...stats.ranks) : 0,
-      shareOfVoice,
-      modelCoverage: Array.from(stats.models),
-      rankingConsistency,
-      topPerformerRate,
-      mentionVelocity,
-      rankingStability,
-      marketPenetration,
-      trend,
-      trendPercentage,
-      dailyMentions: stats.dailyMentions,
-      queryCategories: stats.queryCategories
-    }
-  }).sort((a, b) => b.totalMentions - a.totalMentions)
-}
-
-export const calculateCompetitiveAnalysis = (data: QueryData[], brandNames: string[]): CompetitiveMetrics[] => {
-  const competitive: CompetitiveMetrics[] = []
-  
-  for (let i = 0; i < brandNames.length; i++) {
-    for (let j = i + 1; j < brandNames.length; j++) {
-      const brandA = brandNames[i]
-      const brandB = brandNames[j]
-      
-      let headToHeadWins = 0
-      let totalComparisons = 0
-      const rankDifferences: number[] = []
-
-      // Compare brands in each query where both appear
-      data.forEach(query => {
-        const brandARanks: number[] = []
-        const brandBRanks: number[] = []
-
-        query.runs?.forEach(run => {
-          run.mentions?.forEach(mention => {
-            if (mention.brands?.name === brandA) brandARanks.push(mention.rank)
-            if (mention.brands?.name === brandB) brandBRanks.push(mention.rank)
-          })
-        })
-
-        // If both brands appear in this query, compare their best ranks
-        if (brandARanks.length > 0 && brandBRanks.length > 0) {
-          const bestRankA = Math.min(...brandARanks)
-          const bestRankB = Math.min(...brandBRanks)
-          
-          totalComparisons++
-          if (bestRankA < bestRankB) headToHeadWins++
-          rankDifferences.push(bestRankA - bestRankB)
-        }
-      })
-
-      if (totalComparisons > 0) {
-        const winRate = (headToHeadWins / totalComparisons) * 100
-        const avgRankDifference = rankDifferences.reduce((sum, diff) => sum + diff, 0) / rankDifferences.length
-        const competitiveIntensity = totalComparisons / data.length * 100
-        const marketPosition = winRate >= 60 ? 1 : winRate >= 40 ? 2 : 3
-
-        competitive.push({
-          brandA,
-          brandB,
-          headToHeadWins,
-          totalComparisons,
-          winRate,
-          avgRankDifference,
-          competitiveIntensity,
-          marketPosition
-        })
-      }
-    }
-  }
-
-  return competitive.sort((a, b) => b.winRate - a.winRate)
-}
-
-export const calculateTrends = (data: QueryData[]): TrendData[] => {
-  // Group data by time periods
-  const periods: { [period: string]: {
-    mentions: number[]
-    ranks: number[]
-    shareOfVoice: number[]
-  } } = {}
-
-  data.forEach(query => {
-    const queryDate = parseISO(query.created_at)
-    const period = format(queryDate, 'yyyy-MM-dd')
-    
-    if (!periods[period]) {
-      periods[period] = { mentions: [], ranks: [], shareOfVoice: [] }
-    }
-
-    let totalMentions = 0
-    const ranks: number[] = []
-
-    query.runs?.forEach(run => {
-      run.mentions?.forEach(mention => {
-        totalMentions++
-        ranks.push(mention.rank)
-      })
-    })
-
-    if (totalMentions > 0) {
-      periods[period].mentions.push(totalMentions)
-      periods[period].ranks.push(...ranks)
-      periods[period].shareOfVoice.push(totalMentions)
-    }
-  })
-
-  // Calculate trend data
-  const trendData: TrendData[] = Object.entries(periods).map(([period, data]) => {
-    const avgMentions = data.mentions.length > 0 ? data.mentions.reduce((sum, val) => sum + val, 0) / data.mentions.length : 0
-    const avgRank = data.ranks.length > 0 ? data.ranks.reduce((sum, val) => sum + val, 0) / data.ranks.length : 0
-    const avgShareOfVoice = data.shareOfVoice.length > 0 ? data.shareOfVoice.reduce((sum, val) => sum + val, 0) / data.shareOfVoice.length : 0
-
-    return {
-      period,
-      data: [{
-        date: period,
-        mentions: avgMentions,
-        avgRank,
-        shareOfVoice: avgShareOfVoice
-      }],
-      trend: 'stable' as const,
-      percentageChange: 0
-    }
-  })
-
-  return trendData.sort((a, b) => a.period.localeCompare(b.period))
-}
-
-export const generateForecasts = (historicalData: QueryData[]): ForecastData => {
-  // Simple linear regression for forecasting
-  const dates = historicalData.map(query => parseISO(query.created_at))
-  const mentions = historicalData.map(query => 
-    query.runs?.reduce((sum, run) => sum + (run.mentions?.length || 0), 0) || 0
-  )
-
-  if (dates.length < 2) {
-    return {
-      nextPeriod: { mentions: 0, avgRank: 0, shareOfVoice: 0 },
-      confidence: 0,
-      factors: ['Insufficient data for forecasting']
-    }
-  }
-
-  // Simple trend calculation
-  const firstHalf = mentions.slice(0, Math.floor(mentions.length / 2))
-  const secondHalf = mentions.slice(Math.floor(mentions.length / 2))
-  
-  const avgFirst = firstHalf.reduce((sum, val) => sum + val, 0) / firstHalf.length
-  const avgSecond = secondHalf.reduce((sum, val) => sum + val, 0) / secondHalf.length
-  
-  const trend = avgSecond - avgFirst
-  const nextPeriodMentions = Math.max(0, avgSecond + trend)
-
-  return {
-    nextPeriod: {
-      mentions: nextPeriodMentions,
-      avgRank: 5, // Default assumption
-      shareOfVoice: 20 // Default assumption
-    },
-    confidence: Math.min(85, Math.max(20, 100 - Math.abs(trend) * 10)),
-    factors: [
-      'Historical trend analysis',
-      'Seasonal patterns',
-      'Query volume changes'
-    ]
-  }
-}
-
-// Query Categorization
-export const categorizeQuery = (query: string): string => {
-  const lowerQuery = query.toLowerCase()
-  
-  if (lowerQuery.includes('best') || lowerQuery.includes('top') || lowerQuery.includes('recommend')) {
-    return 'Recommendation'
-  } else if (lowerQuery.includes('compare') || lowerQuery.includes('vs') || lowerQuery.includes('difference')) {
-    return 'Comparison'
-  } else if (lowerQuery.includes('review') || lowerQuery.includes('opinion') || lowerQuery.includes('experience')) {
-    return 'Review'
-  } else if (lowerQuery.includes('price') || lowerQuery.includes('cost') || lowerQuery.includes('affordable')) {
-    return 'Pricing'
-  } else if (lowerQuery.includes('location') || lowerQuery.includes('near') || lowerQuery.includes('address')) {
-    return 'Location'
-  } else {
-    return 'General'
-  }
-}
-
-// Time Range Utilities
-export const createTimeRange = (days: number): TimeRange => {
+// Utility function to create time range
+export function createTimeRange(days: number): TimeRange {
   const end = new Date()
-  const start = subDays(end, days)
+  const start = new Date(end.getTime() - (days * 24 * 60 * 60 * 1000))
   return { start, end, days }
 }
 
-export const formatTimeRange = (timeRange: TimeRange): string => {
-  return `${format(timeRange.start, 'MMM dd')} - ${format(timeRange.end, 'MMM dd, yyyy')}`
+// Filter data by time range
+function filterByTimeRange(data: AnalyticsDataPoint[], timeRange: TimeRange): AnalyticsDataPoint[] {
+  return data.filter(point => {
+    const pointDate = new Date(point.timestamp)
+    return pointDate >= timeRange.start && pointDate <= timeRange.end
+  })
 }
 
-// Performance Metrics
-export const calculateQueryEffectiveness = (query: string, mentions: number, avgRank: number): number => {
-  const sentiment = analyzeQuerySentiment(query)
-  const sentimentScore = sentiment.sentiment === 'positive' ? 1.2 : sentiment.sentiment === 'negative' ? 0.8 : 1.0
+// Group data by date for time series
+function groupByDate(data: AnalyticsDataPoint[]): Map<string, AnalyticsDataPoint[]> {
+  const grouped = new Map<string, AnalyticsDataPoint[]>()
   
-  // Effectiveness formula: mentions * sentiment * (10 - avgRank) / 10
-  return (mentions * sentimentScore * Math.max(1, 10 - avgRank)) / 10
+  data.forEach(point => {
+    const date = new Date(point.timestamp).toISOString().split('T')[0]
+    if (!grouped.has(date)) {
+      grouped.set(date, [])
+    }
+    grouped.get(date)!.push(point)
+  })
+  
+  return grouped
 }
 
-export const analyzeQuerySentiment = (query: string): { sentiment: 'positive' | 'negative' | 'neutral', score: number, keywords: string[] } => {
-  const positiveKeywords = ['best', 'top', 'great', 'excellent', 'amazing', 'good', 'favorite', 'recommend', 'quality', 'premium', 'mejor', 'bueno']
-  const negativeKeywords = ['worst', 'bad', 'terrible', 'awful', 'poor', 'cheap', 'avoid', 'problems', 'issues', 'complaints', 'peor', 'malo']
+// 2.1 Coverage Rate (CR) - Percentage of queries where brand appears
+export function calculateCoverageRate(
+  data: AnalyticsDataPoint[],
+  brand: string,
+  model: ModelType,
+  timeRange: TimeRange
+): CoverageRate {
+  const filteredData = filterByTimeRange(data, timeRange)
+  const brandModelData = filteredData.filter(d => d.brand === brand && d.model === model)
   
-  const lowerQuery = query.toLowerCase()
-  let positiveScore = 0
-  let negativeScore = 0
-  const foundKeywords: string[] = []
+  // Get unique queries for this brand/model combination
+  const uniqueQueries = new Set(brandModelData.map(d => d.query_id))
+  const totalQueries = new Set(filteredData.filter(d => d.model === model).map(d => d.query_id)).size
   
-  positiveKeywords.forEach(word => {
-    if (lowerQuery.includes(word)) {
-      positiveScore++
-      foundKeywords.push(word)
+  const rate = totalQueries > 0 ? (uniqueQueries.size / totalQueries) * 100 : 0
+  
+  // Create time series
+  const groupedData = groupByDate(brandModelData)
+  const timeSeries = Array.from(groupedData.entries()).map(([date, dayData]) => {
+    const dayQueries = new Set(dayData.map(d => d.query_id)).size
+    const totalDayQueries = new Set(filteredData.filter(d => d.model === model && d.timestamp.startsWith(date)).map(d => d.query_id)).size
+    return {
+      date,
+      rate: totalDayQueries > 0 ? (dayQueries / totalDayQueries) * 100 : 0
     }
-  })
+  }).sort((a, b) => a.date.localeCompare(b.date))
   
-  negativeKeywords.forEach(word => {
-    if (lowerQuery.includes(word)) {
-      negativeScore++
-      foundKeywords.push(word)
-    }
-  })
-  
-  if (positiveScore > negativeScore) {
-    return { sentiment: 'positive', score: positiveScore - negativeScore, keywords: foundKeywords }
-  } else if (negativeScore > positiveScore) {
-    return { sentiment: 'negative', score: negativeScore - positiveScore, keywords: foundKeywords }
-  } else {
-    return { sentiment: 'neutral', score: 0, keywords: foundKeywords }
+  return {
+    brand,
+    model,
+    rate,
+    time_series: timeSeries
   }
 }
 
-// Export Utilities
-export const exportAnalyticsData = (data: unknown[], format: 'csv' | 'json'): string => {
-  if (format === 'json') {
-    return JSON.stringify(data, null, 2)
-  } else {
-    // CSV export logic
-    const headers = Object.keys(data[0] || {})
-    const csvContent = [
-      headers.join(','),
-              ...data.map((row) => headers.map(header => JSON.stringify((row as Record<string, unknown>)[header])).join(','))
-    ].join('\n')
-    return csvContent
+// 2.2 Share of Voice (SoV) - Proportion of mentions of a brand over total
+export function calculateShareOfVoice(
+  data: AnalyticsDataPoint[],
+  brand: string,
+  model: ModelType,
+  timeRange: TimeRange
+): ShareOfVoice {
+  const filteredData = filterByTimeRange(data, timeRange)
+  const brandModelData = filteredData.filter(d => d.brand === brand && d.model === model && d.mentioned)
+  const allModelData = filteredData.filter(d => d.model === model && d.mentioned)
+  
+  const brandMentions = brandModelData.length
+  const totalMentions = allModelData.length
+  const percentage = totalMentions > 0 ? (brandMentions / totalMentions) * 100 : 0
+  
+  // Create time series
+  const groupedData = groupByDate(brandModelData)
+  const timeSeries = Array.from(groupedData.entries()).map(([date, dayData]) => {
+    const dayBrandMentions = dayData.length
+    const dayTotalMentions = allModelData.filter(d => d.timestamp.startsWith(date)).length
+    return {
+      date,
+      percentage: dayTotalMentions > 0 ? (dayBrandMentions / dayTotalMentions) * 100 : 0
+    }
+  }).sort((a, b) => a.date.localeCompare(b.date))
+  
+  return {
+    brand,
+    model,
+    percentage,
+    total_mentions: brandMentions,
+    total_mentions_all_brands: totalMentions,
+    time_series: timeSeries
+  }
+}
+
+// 2.3 Average Mention Rank (AMR) - Mean of first_rank where mentioned=true
+export function calculateAverageMentionRank(
+  data: AnalyticsDataPoint[],
+  brand: string,
+  model: ModelType,
+  timeRange: TimeRange
+): AverageMentionRank {
+  const filteredData = filterByTimeRange(data, timeRange)
+  const brandModelData = filteredData.filter(d => d.brand === brand && d.model === model && d.mentioned && d.first_rank !== null)
+  
+  const totalMentions = brandModelData.length
+  const averageRank = totalMentions > 0 
+    ? brandModelData.reduce((sum, d) => sum + (d.first_rank || 0), 0) / totalMentions 
+    : 0
+  
+  // Create time series
+  const groupedData = groupByDate(brandModelData)
+  const timeSeries = Array.from(groupedData.entries()).map(([date, dayData]) => {
+    const dayAverageRank = dayData.length > 0 
+      ? dayData.reduce((sum, d) => sum + (d.first_rank || 0), 0) / dayData.length 
+      : 0
+    return {
+      date,
+      average_rank: dayAverageRank
+    }
+  }).sort((a, b) => a.date.localeCompare(b.date))
+  
+  return {
+    brand,
+    model,
+    average_rank: averageRank,
+    total_mentions: totalMentions,
+    time_series: timeSeries
+  }
+}
+
+// 2.4 Sentiment Score - Mean of sentiment where mentioned=true
+export function calculateSentimentScore(
+  data: AnalyticsDataPoint[],
+  brand: string,
+  model: ModelType,
+  timeRange: TimeRange
+): SentimentScore {
+  const filteredData = filterByTimeRange(data, timeRange)
+  const brandModelData = filteredData.filter(d => d.brand === brand && d.model === model && d.mentioned && d.sentiment !== null)
+  
+  const totalMentions = brandModelData.length
+  const averageSentiment = totalMentions > 0 
+    ? brandModelData.reduce((sum, d) => sum + (d.sentiment || 0), 0) / totalMentions 
+    : 0
+  
+  // Create time series
+  const groupedData = groupByDate(brandModelData)
+  const timeSeries = Array.from(groupedData.entries()).map(([date, dayData]) => {
+    const dayAverageSentiment = dayData.length > 0 
+      ? dayData.reduce((sum, d) => sum + (d.sentiment || 0), 0) / dayData.length 
+      : 0
+    return {
+      date,
+      average_sentiment: dayAverageSentiment
+    }
+  }).sort((a, b) => a.date.localeCompare(b.date))
+  
+  return {
+    brand,
+    model,
+    average_sentiment: averageSentiment,
+    total_mentions: totalMentions,
+    time_series: timeSeries
+  }
+}
+
+// 2.5 Sentiment-Weighted SoV (SW-SoV) - SoV * (sentiment+1)/2
+export function calculateSentimentWeightedSoV(
+  data: AnalyticsDataPoint[],
+  brand: string,
+  model: ModelType,
+  timeRange: TimeRange
+): SentimentWeightedSoV {
+  const sov = calculateShareOfVoice(data, brand, model, timeRange)
+  const sentiment = calculateSentimentScore(data, brand, model, timeRange)
+  
+  const sentimentMultiplier = (sentiment.average_sentiment + 1) / 2
+  const swSov = sov.percentage * sentimentMultiplier
+  
+  // Create time series
+  const timeSeries = sov.time_series.map((sovPoint, index) => {
+    const sentimentPoint = sentiment.time_series[index]
+    const daySentimentMultiplier = sentimentPoint ? (sentimentPoint.average_sentiment + 1) / 2 : 1
+    return {
+      date: sovPoint.date,
+      sw_sov: sovPoint.percentage * daySentimentMultiplier
+    }
+  })
+  
+  return {
+    brand,
+    model,
+    sw_sov: swSov,
+    base_sov: sov.percentage,
+    sentiment_multiplier: sentimentMultiplier,
+    time_series: timeSeries
+  }
+}
+
+// 2.6 Answer Richness (AR) - Mean of evidence_count
+export function calculateAnswerRichness(
+  data: AnalyticsDataPoint[],
+  brand: string,
+  model: ModelType,
+  timeRange: TimeRange
+): AnswerRichness {
+  const filteredData = filterByTimeRange(data, timeRange)
+  const brandModelData = filteredData.filter(d => d.brand === brand && d.model === model && d.mentioned)
+  
+  const totalMentions = brandModelData.length
+  const averageEvidenceCount = totalMentions > 0 
+    ? brandModelData.reduce((sum, d) => sum + d.evidence_count, 0) / totalMentions 
+    : 0
+  
+  // Create time series
+  const groupedData = groupByDate(brandModelData)
+  const timeSeries = Array.from(groupedData.entries()).map(([date, dayData]) => {
+    const dayAverageEvidence = dayData.length > 0 
+      ? dayData.reduce((sum, d) => sum + d.evidence_count, 0) / dayData.length 
+      : 0
+    return {
+      date,
+      average_evidence_count: dayAverageEvidence
+    }
+  }).sort((a, b) => a.date.localeCompare(b.date))
+  
+  return {
+    brand,
+    model,
+    average_evidence_count: averageEvidenceCount,
+    total_mentions: totalMentions,
+    time_series: timeSeries
+  }
+}
+
+// 2.7 Citation Presence (CP) - Percentage of mentions with citations
+export function calculateCitationPresence(
+  data: AnalyticsDataPoint[],
+  brand: string,
+  model: ModelType,
+  timeRange: TimeRange
+): CitationPresence {
+  const filteredData = filterByTimeRange(data, timeRange)
+  const brandModelData = filteredData.filter(d => d.brand === brand && d.model === model && d.mentioned)
+  
+  const totalMentions = brandModelData.length
+  const mentionsWithCitations = brandModelData.filter(d => d.has_citation).length
+  const citationRate = totalMentions > 0 ? (mentionsWithCitations / totalMentions) * 100 : 0
+  
+  // Create time series
+  const groupedData = groupByDate(brandModelData)
+  const timeSeries = Array.from(groupedData.entries()).map(([date, dayData]) => {
+    const dayCitations = dayData.filter(d => d.has_citation).length
+    return {
+      date,
+      citation_rate: dayData.length > 0 ? (dayCitations / dayData.length) * 100 : 0
+    }
+  }).sort((a, b) => a.date.localeCompare(b.date))
+  
+  return {
+    brand,
+    model,
+    citation_rate: citationRate,
+    total_mentions: totalMentions,
+    mentions_with_citations: mentionsWithCitations,
+    time_series: timeSeries
+  }
+}
+
+// 2.8 Model Win Rate (MWR) - Percentage of times model ranks brand first when ≥2 models mention it
+export function calculateModelWinRate(
+  data: AnalyticsDataPoint[],
+  brand: string,
+  model: ModelType,
+  timeRange: TimeRange
+): ModelWinRate {
+  const filteredData = filterByTimeRange(data, timeRange)
+  
+  // Get queries where this brand is mentioned by multiple models
+  const brandQueries = new Set(filteredData.filter(d => d.brand === brand && d.mentioned).map(d => d.query_id))
+  
+  let totalCompetitions = 0
+  let wins = 0
+  
+  brandQueries.forEach(queryId => {
+    const queryMentions = filteredData.filter(d => d.query_id === queryId && d.brand === brand && d.mentioned)
+    
+    // Only count if multiple models mentioned this brand
+    if (queryMentions.length >= 2) {
+      totalCompetitions++
+      
+      // Check if this model ranked the brand first
+      const modelMention = queryMentions.find(d => d.model === model)
+      if (modelMention) {
+        const bestRank = Math.min(...queryMentions.map(d => d.first_rank || Infinity))
+        if (modelMention.first_rank === bestRank) {
+          wins++
+        }
+      }
+    }
+  })
+  
+  const winRate = totalCompetitions > 0 ? (wins / totalCompetitions) * 100 : 0
+  
+  // Create time series (simplified - would need more complex logic for daily breakdown)
+  const timeSeries = [{
+    date: new Date().toISOString().split('T')[0],
+    win_rate: winRate
+  }]
+  
+  return {
+    brand,
+    model,
+    win_rate: winRate,
+    total_competitions: totalCompetitions,
+    wins,
+    time_series: timeSeries
+  }
+}
+
+// 2.9 Competitive Win Rate (CWR) - Percentage of times brand_a beats brand_b
+export function calculateCompetitiveWinRate(
+  data: AnalyticsDataPoint[],
+  brandA: string,
+  brandB: string,
+  timeRange: TimeRange
+): CompetitiveWinRate {
+  const filteredData = filterByTimeRange(data, timeRange)
+  
+  // Get queries where both brands are mentioned
+  const brandAQueries = new Set(filteredData.filter(d => d.brand === brandA && d.mentioned).map(d => d.query_id))
+  const brandBQueries = new Set(filteredData.filter(d => d.brand === brandB && d.mentioned).map(d => d.query_id))
+  
+  const commonQueries = new Set([...brandAQueries].filter(q => brandBQueries.has(q)))
+  
+  let totalComparisons = 0
+  let brandAWins = 0
+  
+  commonQueries.forEach(queryId => {
+    const brandAMentions = filteredData.filter(d => d.query_id === queryId && d.brand === brandA && d.mentioned)
+    const brandBMentions = filteredData.filter(d => d.query_id === queryId && d.brand === brandB && d.mentioned)
+    
+    if (brandAMentions.length > 0 && brandBMentions.length > 0) {
+      totalComparisons++
+      
+      const brandABestRank = Math.min(...brandAMentions.map(d => d.first_rank || Infinity))
+      const brandBBestRank = Math.min(...brandBMentions.map(d => d.first_rank || Infinity))
+      
+      if (brandABestRank < brandBBestRank) {
+        brandAWins++
+      }
+    }
+  })
+  
+  const winRate = totalComparisons > 0 ? (brandAWins / totalComparisons) * 100 : 0
+  
+  // Create time series (simplified)
+  const timeSeries = [{
+    date: new Date().toISOString().split('T')[0],
+    win_rate: winRate
+  }]
+  
+  return {
+    brand_a: brandA,
+    brand_b: brandB,
+    win_rate: winRate,
+    total_comparisons: totalComparisons,
+    brand_a_wins: brandAWins,
+    time_series: timeSeries
+  }
+}
+
+// 2.10 Query Effectiveness (QE) - SW-SoV sum / query length
+export function calculateQueryEffectiveness(
+  data: AnalyticsDataPoint[],
+  queryId: string,
+  brands: string[]
+): QueryEffectiveness {
+  const queryData = data.filter(d => d.query_id === queryId)
+  const queryText = queryData[0]?.query_text || ''
+  
+  // Calculate SW-SoV for each brand in this query
+  const swSovValues = brands.map(brand => {
+    const brandData = queryData.filter(d => d.brand === brand)
+    if (brandData.length === 0) return 0
+    
+    // Simplified SW-SoV calculation for single query
+    const totalMentions = queryData.length
+    const brandMentions = brandData.length
+    const sov = totalMentions > 0 ? (brandMentions / totalMentions) * 100 : 0
+    
+    const averageSentiment = brandData.length > 0 
+      ? brandData.reduce((sum, d) => sum + (d.sentiment || 0), 0) / brandData.length 
+      : 0
+    
+    const sentimentMultiplier = (averageSentiment + 1) / 2
+    return sov * sentimentMultiplier
+  })
+  
+  const totalSwSov = swSovValues.reduce((sum, val) => sum + val, 0)
+  const effectivenessScore = queryText.length > 0 ? totalSwSov / queryText.length : 0
+  
+  const totalBrandsMentioned = new Set(queryData.filter(d => d.mentioned).map(d => d.brand)).size
+  const averageSwSov = brands.length > 0 ? totalSwSov / brands.length : 0
+  
+  return {
+    query_id: queryId,
+    query_text: queryText,
+    effectiveness_score: effectivenessScore,
+    total_brands_mentioned: totalBrandsMentioned,
+    average_sw_sov: averageSwSov,
+    query_length: queryText.length,
+    time_series: [{
+      date: new Date().toISOString().split('T')[0],
+      effectiveness_score: effectivenessScore
+    }]
+  }
+}
+
+// 2.11 Volatility Index (VI) - Standard deviation of coverage rate over time window
+export function calculateVolatilityIndex(
+  data: AnalyticsDataPoint[],
+  brand: string,
+  model: ModelType,
+  timeWindowDays: number,
+  timeRange: TimeRange
+): VolatilityIndex {
+  const coverageRates = calculateCoverageRate(data, brand, model, timeRange)
+  
+  // Calculate standard deviation of coverage rates
+  const rates = coverageRates.time_series.map(ts => ts.rate)
+  const mean = rates.reduce((sum, rate) => sum + rate, 0) / rates.length
+  const variance = rates.reduce((sum, rate) => sum + Math.pow(rate - mean, 2), 0) / rates.length
+  const stdDev = Math.sqrt(variance)
+  
+  const volatilityIndex = stdDev / (mean > 0 ? mean : 1) // Normalized volatility
+  
+  return {
+    brand,
+    model,
+    volatility_index: volatilityIndex,
+    coverage_rate_std_dev: stdDev,
+    time_window_days: timeWindowDays,
+    time_series: coverageRates.time_series.map(ts => ({
+      date: ts.date,
+      volatility_index: volatilityIndex
+    }))
+  }
+}
+
+// Calculate comprehensive analytics for all metrics
+export function calculateComprehensiveAnalytics(
+  data: AnalyticsDataPoint[],
+  brands: string[],
+  models: ModelType[],
+  timeRange: TimeRange
+): ComprehensiveAnalytics {
+  // Calculate all metrics
+  const coverageRates = brands.flatMap(brand =>
+    models.map(model => calculateCoverageRate(data, brand, model, timeRange))
+  )
+  
+  const shareOfVoice = brands.flatMap(brand =>
+    models.map(model => calculateShareOfVoice(data, brand, model, timeRange))
+  )
+  
+  const averageMentionRanks = brands.flatMap(brand =>
+    models.map(model => calculateAverageMentionRank(data, brand, model, timeRange))
+  )
+  
+  const sentimentScores = brands.flatMap(brand =>
+    models.map(model => calculateSentimentScore(data, brand, model, timeRange))
+  )
+  
+  const sentimentWeightedSoV = brands.flatMap(brand =>
+    models.map(model => calculateSentimentWeightedSoV(data, brand, model, timeRange))
+  )
+  
+  const answerRichness = brands.flatMap(brand =>
+    models.map(model => calculateAnswerRichness(data, brand, model, timeRange))
+  )
+  
+  const citationPresence = brands.flatMap(brand =>
+    models.map(model => calculateCitationPresence(data, brand, model, timeRange))
+  )
+  
+  const modelWinRates = brands.flatMap(brand =>
+    models.map(model => calculateModelWinRate(data, brand, model, timeRange))
+  )
+  
+  const competitiveWinRates = brands.length > 1 ? 
+    brands.slice(0, -1).flatMap((brandA, i) =>
+      brands.slice(i + 1).map(brandB =>
+        calculateCompetitiveWinRate(data, brandA, brandB, timeRange)
+      )
+    ) : []
+  
+  const queryIds = [...new Set(data.map(d => d.query_id))]
+  const queryEffectiveness = queryIds.map(queryId =>
+    calculateQueryEffectiveness(data, queryId, brands)
+  ).sort((a, b) => b.effectiveness_score - a.effectiveness_score)
+  
+  const volatilityIndices = brands.flatMap(brand =>
+    models.map(model => calculateVolatilityIndex(data, brand, model, 30, timeRange))
+  )
+  
+  // Calculate summary
+  const totalQueries = new Set(data.map(d => d.query_id)).size
+  const totalMentions = data.filter(d => d.mentioned).length
+  const averageCoverageRate = coverageRates.reduce((sum, cr) => sum + cr.rate, 0) / coverageRates.length || 0
+  const averageSentiment = sentimentScores.reduce((sum, ss) => sum + ss.average_sentiment, 0) / sentimentScores.length || 0
+  
+  // Find top performing brand and model
+  const topPerformingBrand = shareOfVoice.length > 0 
+    ? shareOfVoice.reduce((top, sov) => sov.percentage > top.percentage ? sov : top).brand 
+    : brands[0] || ''
+  
+  const topPerformingModel = modelWinRates.length > 0 
+    ? modelWinRates.reduce((top, mwr) => mwr.win_rate > top.win_rate ? mwr : top).model 
+    : models[0] || 'chatgpt'
+  
+  const summary: AnalyticsSummary = {
+    total_queries: totalQueries,
+    total_mentions: totalMentions,
+    average_coverage_rate: averageCoverageRate,
+    average_sentiment: averageSentiment,
+    top_performing_brand: topPerformingBrand,
+    top_performing_model: topPerformingModel,
+    time_range: timeRange
+  }
+  
+  return {
+    summary,
+    coverage_rates: coverageRates,
+    share_of_voice: shareOfVoice,
+    average_mention_ranks: averageMentionRanks,
+    sentiment_scores: sentimentScores,
+    sentiment_weighted_sov: sentimentWeightedSoV,
+    answer_richness: answerRichness,
+    citation_presence: citationPresence,
+    model_win_rates: modelWinRates,
+    competitive_win_rates: competitiveWinRates,
+    query_effectiveness: queryEffectiveness,
+    volatility_indices: volatilityIndices
   }
 } 

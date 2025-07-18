@@ -1,20 +1,33 @@
-'use client'
+ 'use client'
 
 import { createContext, useContext, useEffect, useState } from 'react'
 import { User, Session } from '@supabase/supabase-js'
 import { createBrowserClient } from '@supabase/ssr'
 
-// Create browser client
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+// Create browser client conditionally to avoid build issues
+const createSupabaseClient = () => {
+  if (typeof window === 'undefined') {
+    // Server-side rendering - return null
+    return null
+  }
+  
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  
+  if (!url || !key) {
+    console.warn('Supabase environment variables not found')
+    return null
+  }
+  
+  return createBrowserClient(url, key)
+}
 
 interface AuthContextType {
   user: User | null
   loading: boolean
   signInWithPassword: (email: string, password: string) => Promise<{ user: User | null; session: Session | null }>
   signUpWithPassword: (email: string, password: string) => Promise<{ user: User | null; session: Session | null }>
+  signInWithGoogle: () => Promise<any>
   signOut: () => Promise<void>
 }
 
@@ -23,12 +36,22 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [supabase, setSupabase] = useState<any>(null)
 
   useEffect(() => {
+    // Initialize Supabase client
+    const client = createSupabaseClient()
+    setSupabase(client)
+    
+    if (!client) {
+      setLoading(false)
+      return
+    }
+
     // Get initial session
     const initializeAuth = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession()
+        const { data: { session }, error } = await client.auth.getSession()
         if (error) {
           console.error('Error getting session:', error.message)
         } else {
@@ -45,7 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initializeAuth()
 
     // Listen for changes on auth state (logged in, signed out, etc.)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = client.auth.onAuthStateChange((event: string, session: Session | null) => {
       console.log('Auth state change:', { event, hasSession: !!session, timestamp: new Date().toISOString() })
       setUser(session?.user ?? null)
       setLoading(false)
@@ -55,6 +78,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const signInWithPassword = async (email: string, password: string) => {
+    if (!supabase) throw new Error('Supabase client not initialized')
+    
     console.log('Attempting sign in...')
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -69,6 +94,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signUpWithPassword = async (email: string, password: string) => {
+    if (!supabase) throw new Error('Supabase client not initialized')
+    
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -86,7 +113,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return data
   }
 
+  const signInWithGoogle = async () => {
+    if (!supabase) throw new Error('Supabase client not initialized')
+    
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`
+      }
+    })
+    if (error) throw error
+    return data
+  }
+
   const signOut = async () => {
+    if (!supabase) throw new Error('Supabase client not initialized')
+    
     const { error } = await supabase.auth.signOut()
     if (error) throw error
   }
@@ -96,6 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loading,
     signInWithPassword,
     signUpWithPassword,
+    signInWithGoogle,
     signOut
   }
 

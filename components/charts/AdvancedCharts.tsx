@@ -15,10 +15,46 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  HelpCircle,
+  Info
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
+// Tooltip component for help text
+function Tooltip({ children, content }: { children: React.ReactNode; content: string }) {
+  const [showTooltip, setShowTooltip] = useState(false)
+  
+  return (
+    <div className="relative inline-block">
+      <div
+        onMouseEnter={() => setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
+        className="cursor-help"
+      >
+        {children}
+      </div>
+      {showTooltip && (
+        <div className="absolute z-50 px-3 py-2 text-sm text-white bg-gray-900 rounded-lg shadow-lg whitespace-nowrap -top-2 left-full ml-2">
+          {content}
+          <div className="absolute top-1/2 -left-1 w-2 h-2 bg-gray-900 transform -translate-y-1/2 rotate-45"></div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Help text component for metric explanations
+function MetricHelp({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="flex items-center gap-2 text-sm text-gray-600">
+      <span className="font-medium">{title}</span>
+      <Tooltip content={description}>
+        <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-600 cursor-help" />
+      </Tooltip>
+    </div>
+  )
+}
 
 interface BrandMention {
   id: string
@@ -96,14 +132,14 @@ export default function AdvancedCharts({ refreshTrigger, selectedBrandListId }: 
       
       // Calculate metrics
       const totalMentions = mentionsData.length
-      const totalQueries = new Set(mentionsData.map(m => m.query_text)).size
+      const totalQueries = new Set(mentionsData.map((m: BrandMention) => m.query_text)).size
       const averageRanking = mentionsData.length > 0 
-        ? mentionsData.reduce((sum, m) => sum + m.position, 0) / mentionsData.length 
+        ? mentionsData.reduce((sum: number, m: BrandMention) => sum + m.position, 0) / mentionsData.length 
         : 0
 
       // Mentions by model
       const modelCounts: Record<string, number> = {}
-      mentionsData.forEach(mention => {
+      mentionsData.forEach((mention: BrandMention) => {
         modelCounts[mention.model] = (modelCounts[mention.model] || 0) + 1
       })
       const mentionsByModel = Object.entries(modelCounts).map(([model, mentions]) => ({
@@ -113,7 +149,7 @@ export default function AdvancedCharts({ refreshTrigger, selectedBrandListId }: 
 
       // Mentions by brand
       const brandStats: Record<string, { mentions: number; totalRank: number }> = {}
-      mentionsData.forEach(mention => {
+      mentionsData.forEach((mention: BrandMention) => {
         if (!brandStats[mention.brand]) {
           brandStats[mention.brand] = { mentions: 0, totalRank: 0 }
         }
@@ -128,7 +164,7 @@ export default function AdvancedCharts({ refreshTrigger, selectedBrandListId }: 
 
       // Mentions over time
       const timeCounts: Record<string, number> = {}
-      mentionsData.forEach(mention => {
+      mentionsData.forEach((mention: BrandMention) => {
         const date = new Date(mention.created_at).toISOString().split('T')[0]
         timeCounts[date] = (timeCounts[date] || 0) + 1
       })
@@ -249,17 +285,25 @@ export default function AdvancedCharts({ refreshTrigger, selectedBrandListId }: 
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Analytics Dashboard</h2>
           <p className="text-gray-600">Track your brand performance across AI models</p>
+          <div className="flex items-center gap-2 mt-2">
+            <Info className="w-4 h-4 text-blue-500" />
+            <span className="text-sm text-gray-500">
+              Hover over metric titles for detailed explanations
+            </span>
+          </div>
         </div>
         <div className="flex items-center space-x-2">
-          <select
-            value={timeRange}
-            onChange={(e) => setTimeRange(e.target.value as '7d' | '30d' | '90d')}
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm"
-          >
-            <option value="7d">Last 7 days</option>
-            <option value="30d">Last 30 days</option>
-            <option value="90d">Last 90 days</option>
-          </select>
+          <Tooltip content="Select the time period for your analytics data. Longer periods show more trends but may include older data.">
+            <select
+              value={timeRange}
+              onChange={(e) => setTimeRange(e.target.value as '7d' | '30d' | '90d')}
+              className="border border-gray-300 rounded-md px-3 py-2 text-sm"
+            >
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+              <option value="90d">Last 90 days</option>
+            </select>
+          </Tooltip>
           <Button variant="outline" onClick={handleRefresh}>
             <RefreshCw className="w-4 h-4 mr-2" />
             Refresh
@@ -277,7 +321,10 @@ export default function AdvancedCharts({ refreshTrigger, selectedBrandListId }: 
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Mentions</p>
+                <MetricHelp 
+                  title="Total Mentions" 
+                  description="The total number of times your brands were mentioned across all AI models in the selected time period."
+                />
                 <p className="text-2xl font-bold text-gray-900">{data.totalMentions}</p>
                 <p className="text-xs text-green-600 flex items-center">
                   <ArrowUpRight className="w-3 h-3 mr-1" />
@@ -293,7 +340,10 @@ export default function AdvancedCharts({ refreshTrigger, selectedBrandListId }: 
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Queries</p>
+                <MetricHelp 
+                  title="Total Queries" 
+                  description="The number of unique queries that generated brand mentions. Higher numbers indicate broader query coverage."
+                />
                 <p className="text-2xl font-bold text-gray-900">{data.totalQueries}</p>
                 <p className="text-xs text-green-600 flex items-center">
                   <ArrowUpRight className="w-3 h-3 mr-1" />
@@ -309,7 +359,10 @@ export default function AdvancedCharts({ refreshTrigger, selectedBrandListId }: 
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Avg Ranking</p>
+                <MetricHelp 
+                  title="Avg Ranking" 
+                  description="The average position where your brands appear in AI responses. Lower numbers (1-3) indicate better visibility."
+                />
                 <p className="text-2xl font-bold text-gray-900">
                   {data.averageRanking > 0 ? data.averageRanking.toFixed(1) : 'N/A'}
                 </p>
@@ -327,7 +380,10 @@ export default function AdvancedCharts({ refreshTrigger, selectedBrandListId }: 
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Success Rate</p>
+                <MetricHelp 
+                  title="Success Rate" 
+                  description="Percentage of queries that successfully generated brand mentions. Higher rates indicate better AEO optimization."
+                />
                 <p className="text-2xl font-bold text-gray-900">{data.successRate}%</p>
                 <p className="text-xs text-green-600 flex items-center">
                   <ArrowUpRight className="w-3 h-3 mr-1" />

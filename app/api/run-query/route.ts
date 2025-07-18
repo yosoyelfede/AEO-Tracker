@@ -322,11 +322,65 @@ function calculateSimilarity(str1: string, str2: string): number {
 //     .trim()
 // }
 
-// Extract brand mentions from text with improved matching
+// Enhanced brand extraction with sentiment analysis, evidence counting, and citation detection
 function extractBrands(text: string, brandNames: string[]) {
   // Helper to normalize for comparison
   function normalize(str: string) {
     return removeDiacriticsAndPunctuation(str).toLowerCase()
+  }
+
+  // Sentiment analysis function
+  function calculateSentiment(text: string): number {
+    const positiveWords = ['excellent', 'amazing', 'best', 'great', 'outstanding', 'fantastic', 'wonderful', 'perfect', 'superb', 'brilliant', 'top', 'premium', 'quality', 'recommended', 'favorite', 'loved', 'enjoyed', 'satisfied', 'happy', 'delicious', 'authentic', 'fresh', 'innovative', 'reliable', 'trusted', 'popular', 'award-winning', 'expert', 'professional', 'exclusive', 'luxury'];
+    const negativeWords = ['terrible', 'awful', 'worst', 'bad', 'poor', 'disappointing', 'horrible', 'mediocre', 'average', 'overrated', 'expensive', 'cheap', 'avoid', 'skip', 'waste', 'disappointed', 'unhappy', 'dissatisfied', 'regret', 'complaint', 'cold', 'stale', 'unprofessional', 'rude', 'slow', 'overpriced', 'crowded', 'noisy', 'dirty', 'unreliable', 'fake'];
+    
+    const words = text.toLowerCase().split(/\s+/);
+    let positiveCount = 0;
+    let negativeCount = 0;
+    
+    words.forEach(word => {
+      if (positiveWords.includes(word)) positiveCount++;
+      if (negativeWords.includes(word)) negativeCount++;
+    });
+    
+    const totalWords = words.length;
+    if (totalWords === 0) return 0;
+    
+    // Return sentiment score between -1 and 1
+    return Math.max(-1, Math.min(1, (positiveCount - negativeCount) / totalWords));
+  }
+
+  // Evidence counting function
+  function countEvidence(text: string): number {
+    let count = 0;
+    
+    // Count URLs
+    const urlMatches = text.match(/https?:\/\/[^\s]+/g);
+    if (urlMatches) count += urlMatches.length;
+    
+    // Count citations (text in quotes or parentheses with source)
+    const citationMatches = text.match(/["''][^"'']*["'']\s*\([^)]+\)/g);
+    if (citationMatches) count += citationMatches.length;
+    
+    // Count numbers that might be data points
+    const dataMatches = text.match(/\d+%|\d+\s*(stars?|points?|rating|years?|customers?|reviews?)/g);
+    if (dataMatches) count += dataMatches.length;
+    
+    // Count "according to" or "source:" patterns
+    const sourceMatches = text.match(/according to|source:|cited|reference|study|research|report|survey/gi);
+    if (sourceMatches) count += sourceMatches.length;
+    
+    return count;
+  }
+
+  // Citation detection function
+  function hasCitation(text: string): boolean {
+    return !!(
+      text.match(/https?:\/\/[^\s]+/) || // URLs
+      text.match(/["''][^"'']*["'"]\s*\([^)]+\)/) || // Quoted text with source
+      text.match(/according to|source:|cited|reference/gi) || // Citation keywords
+      text.match(/\d{4}.*\b(study|research|report|survey)\b/) // Year with research terms
+    );
   }
 
   // Build normalized text and mapping from normalized index to original index
@@ -368,7 +422,15 @@ function extractBrands(text: string, brandNames: string[]) {
     }
   })
 
-  const mentions: { brand: string; position: number; context: string; confidence: number }[] = []
+  const mentions: { 
+    brand: string; 
+    position: number; 
+    context: string; 
+    confidence: number;
+    sentiment_score: number;
+    evidence_count: number;
+    has_citation: boolean;
+  }[] = []
   const usedPositions = new Set<number>()
 
   // First pass: exact matches
@@ -389,14 +451,23 @@ function extractBrands(text: string, brandNames: string[]) {
       if (beforeOk && afterOk) {
         // Check if not in URL/citation in original text
         if (!isInUrlOrCitation(origIdx, text)) {
-          const start = Math.max(0, origIdx - 50)
-          const end = Math.min(text.length, origIdx + normBrand.length + 50)
+          const start = Math.max(0, origIdx - 100)
+          const end = Math.min(text.length, origIdx + normBrand.length + 100)
           const context = text.substring(start, end)
+          
+          // Calculate analytics metrics for this mention
+          const sentiment_score = calculateSentiment(context);
+          const evidence_count = countEvidence(context);
+          const has_citation = hasCitation(context);
+          
           mentions.push({ 
             brand: origBrand, 
             position: origIdx, 
             context,
-            confidence: 1.0
+            confidence: 1.0,
+            sentiment_score,
+            evidence_count,
+            has_citation
           })
           usedPositions.add(origIdx)
         }
@@ -429,14 +500,23 @@ function extractBrands(text: string, brandNames: string[]) {
       if (normBrandMap.has(normPhrase)) {
         const brand = normBrandMap.get(normPhrase)!
         if (!usedPositions.has(wordStart)) {
-          const start = Math.max(0, wordStart - 50)
-          const end = Math.min(text.length, wordStart + phrase.length + 50)
+          const start = Math.max(0, wordStart - 100)
+          const end = Math.min(text.length, wordStart + phrase.length + 100)
           const context = text.substring(start, end)
+          
+          // Calculate analytics metrics for this mention
+          const sentiment_score = calculateSentiment(context);
+          const evidence_count = countEvidence(context);
+          const has_citation = hasCitation(context);
+          
           mentions.push({ 
             brand, 
             position: wordStart, 
             context,
-            confidence: 0.9
+            confidence: 0.9,
+            sentiment_score,
+            evidence_count,
+            has_citation
           })
           usedPositions.add(wordStart)
           break
@@ -449,14 +529,23 @@ function extractBrands(text: string, brandNames: string[]) {
           const similarity = calculateSimilarity(normPhrase, variation)
           if (similarity >= 0.8) { // 80% similarity threshold
             if (!usedPositions.has(wordStart)) {
-              const start = Math.max(0, wordStart - 50)
-              const end = Math.min(text.length, wordStart + phrase.length + 50)
+              const start = Math.max(0, wordStart - 100)
+              const end = Math.min(text.length, wordStart + phrase.length + 100)
               const context = text.substring(start, end)
+              
+              // Calculate analytics metrics for this mention
+              const sentiment_score = calculateSentiment(context);
+              const evidence_count = countEvidence(context);
+              const has_citation = hasCitation(context);
+              
               mentions.push({ 
                 brand, 
                 position: wordStart, 
                 context,
-                confidence: similarity
+                confidence: similarity,
+                sentiment_score,
+                evidence_count,
+                has_citation
               })
               usedPositions.add(wordStart)
               break
@@ -477,7 +566,14 @@ function extractBrands(text: string, brandNames: string[]) {
       }
       return b.confidence - a.confidence
     })
-    .map(({ brand, position, context }) => ({ brand, position, context }))
+    .map(({ brand, position, context, sentiment_score, evidence_count, has_citation }) => ({ 
+      brand, 
+      position, 
+      context, 
+      sentiment_score, 
+      evidence_count, 
+      has_citation 
+    }))
 }
 
 function stripMarkdown(text: string): string {
@@ -886,12 +982,19 @@ export async function POST(request: Request) {
               )
             }
 
-            // Prepare all mention records for batch insert
+            // Prepare all mention records for batch insert with analytics fields
             const mentionRecords = mentions.map((mention, i) => ({
               run_id: runData.id,
               brand_id: brandNameToId[mention.brand],
+              brand_list_id: brandListId, // Add brand_list_id to associate mentions with brand lists
               rank: i + 1,
-              position: mention.position
+              position: mention.position,
+              context: mention.context,
+              sentiment_score: mention.sentiment_score,
+              evidence_count: mention.evidence_count,
+              has_citation: mention.has_citation,
+              query_text: sanitizedQueryText,
+              model: model
             }))
 
             // Batch insert all mentions

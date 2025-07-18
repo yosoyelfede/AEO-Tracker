@@ -81,9 +81,9 @@ export default function BrandListManager({ onBrandListSelect, selectedBrandListI
       }
 
       // Transform brand_list_items to brands format for compatibility
-      const transformedLists = (lists || []).map(list => ({
+      const transformedLists = (lists || []).map((list: any) => ({
         ...list,
-        brands: (list.brand_list_items || []).map(item => ({
+        brands: (list.brand_list_items || []).map((item: { id: string; brand_name: string; created_at: string }) => ({
           id: item.id,
           name: item.brand_name,
           created_at: item.created_at
@@ -95,7 +95,7 @@ export default function BrandListManager({ onBrandListSelect, selectedBrandListI
       // Auto-select the first list if none is selected
       if (transformedLists && transformedLists.length > 0 && !selectedBrandListId) {
         const firstList = transformedLists[0]
-        const brandNames = firstList.brands?.map(brand => brand.name) || []
+        const brandNames = firstList.brands?.map((brand: { name: string }) => brand.name) || []
         onBrandListSelect(firstList.id, brandNames)
       }
     } catch (err) {
@@ -167,7 +167,7 @@ export default function BrandListManager({ onBrandListSelect, selectedBrandListI
         const remainingLists = brandLists.filter(list => list.id !== listId)
         if (remainingLists.length > 0) {
           const firstList = remainingLists[0]
-          const brandNames = firstList.brands?.map(brand => brand.name) || []
+          const brandNames = firstList.brands?.map((brand: { name: string }) => brand.name) || []
           onBrandListSelect(firstList.id, brandNames)
         } else {
           onBrandListSelect('', [])
