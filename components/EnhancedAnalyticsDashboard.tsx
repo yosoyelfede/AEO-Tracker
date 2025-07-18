@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -21,7 +21,8 @@ import {
   BarChart3,
   Calendar,
   Activity,
-  Lightbulb
+  Lightbulb,
+  Info
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/auth-context'
@@ -45,6 +46,42 @@ import {
   ScatterPlot,
   BRAND_COLORS
 } from '@/components/charts/AdvancedCharts'
+
+// Metric Info Tooltip Component
+interface MetricInfoTooltipProps {
+  metric: string
+  explanation: string
+}
+
+const MetricInfoTooltip: React.FC<MetricInfoTooltipProps> = ({ metric, explanation }) => {
+  const [showTooltip, setShowTooltip] = useState(false)
+
+  const handleMouseEnter = () => {
+    setShowTooltip(true)
+  }
+
+  const handleMouseLeave = () => {
+    setShowTooltip(false)
+  }
+
+  return (
+    <div 
+      className="relative inline-block"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <Info className="w-4 h-4 text-gray-400 hover:text-gray-600 cursor-help" />
+      {showTooltip && (
+        <div 
+          className="absolute left-6 top-0 w-80 h-80 bg-gray-700 text-white text-sm rounded-lg shadow-xl pointer-events-none z-[9999] p-6 flex flex-col justify-center"
+        >
+          <div className="font-bold text-lg mb-4">{metric}</div>
+          <div className="text-base leading-relaxed">{explanation}</div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // Enhanced Types
 interface BrandList {
@@ -245,6 +282,8 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
     selectedBrands.length === 0 || selectedBrands.includes(metric.brand)
   ) || []
 
+
+
   const getTrendIcon = (trend: 'up' | 'down' | 'stable') => {
     switch (trend) {
       case 'up': return <TrendingUp className="h-4 w-4 text-green-500" />
@@ -441,7 +480,13 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Total Mentions</CardTitle>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">Total Mentions</CardTitle>
+                  <MetricInfoTooltip 
+                    metric="Total Mentions" 
+                    explanation="Absolute count of brand mentions across all queries. Shows the total visibility of your brands in AI responses." 
+                  />
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
@@ -453,7 +498,13 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Avg Mention Rate</CardTitle>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">Avg Mention Rate</CardTitle>
+                  <MetricInfoTooltip 
+                    metric="Average Mention Rate" 
+                    explanation="Percentage of queries where your brands appear. Higher is better - shows how consistently your brands are mentioned across searches." 
+                  />
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
@@ -465,7 +516,13 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Avg Ranking</CardTitle>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">Avg Ranking</CardTitle>
+                  <MetricInfoTooltip 
+                    metric="Average Ranking" 
+                    explanation="Average position when your brands are mentioned. Lower is better - 1st place is best, 10th place is worst." 
+                  />
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
@@ -477,7 +534,13 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Top Performer</CardTitle>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">Top Performer</CardTitle>
+                  <MetricInfoTooltip 
+                    metric="Top Performer" 
+                    explanation="The brand with the highest total mentions. Shows which brand is getting the most visibility in AI responses." 
+                  />
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="text-lg font-bold">
@@ -547,18 +610,74 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
               <CardDescription>Comprehensive metrics for all tracked brands</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto relative">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b">
                       <th className="text-left p-2">Brand</th>
-                      <th className="text-right p-2">Mentions</th>
-                      <th className="text-right p-2">Mention Rate</th>
-                      <th className="text-right p-2">Avg Rank</th>
-                      <th className="text-right p-2">Share of Voice</th>
-                      <th className="text-right p-2">Velocity</th>
-                      <th className="text-right p-2">Stability</th>
-                      <th className="text-right p-2">Trend</th>
+                      <th className="text-right p-2">
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Mentions</span>
+                          <MetricInfoTooltip 
+                            metric="Mentions" 
+                            explanation="Total number of times this brand was mentioned across all queries. Higher is better - shows brand visibility." 
+                          />
+                        </div>
+                      </th>
+                      <th className="text-right p-2">
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Mention Rate</span>
+                          <MetricInfoTooltip 
+                            metric="Mention Rate" 
+                            explanation="Percentage of queries where this brand appears. Higher is better - shows how consistently the brand is mentioned." 
+                          />
+                        </div>
+                      </th>
+                      <th className="text-right p-2">
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Avg Rank</span>
+                          <MetricInfoTooltip 
+                            metric="Average Rank" 
+                            explanation="Average position when this brand is mentioned. Lower is better - 1st place is best, 10th place is worst." 
+                          />
+                        </div>
+                      </th>
+                      <th className="text-right p-2">
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Share of Voice</span>
+                          <MetricInfoTooltip 
+                            metric="Share of Voice" 
+                            explanation="Percentage of total brand mentions this brand represents. Higher is better - shows market dominance." 
+                          />
+                        </div>
+                      </th>
+                      <th className="text-right p-2">
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Velocity</span>
+                          <MetricInfoTooltip 
+                            metric="Mention Velocity" 
+                            explanation="Mentions per day. Higher is better - shows how quickly the brand is gaining visibility over time." 
+                          />
+                        </div>
+                      </th>
+                      <th className="text-right p-2">
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Stability</span>
+                          <MetricInfoTooltip 
+                            metric="Ranking Stability" 
+                            explanation="Consistency of ranking positions. Higher is better - shows how reliable the brand's performance is." 
+                          />
+                        </div>
+                      </th>
+                      <th className="text-right p-2">
+                        <div className="flex items-center justify-end gap-1">
+                          <span>Trend</span>
+                          <MetricInfoTooltip 
+                            metric="Trend" 
+                            explanation="Performance change over time. Shows if the brand is improving, declining, or staying stable." 
+                          />
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -612,16 +731,56 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
             </CardHeader>
             <CardContent>
               {analyticsData.competitiveAnalysis.length > 0 ? (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto relative">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b">
                         <th className="text-left p-2">Matchup</th>
-                        <th className="text-right p-2">Win Rate</th>
-                        <th className="text-right p-2">Wins</th>
-                        <th className="text-right p-2">Comparisons</th>
-                        <th className="text-right p-2">Avg Rank Diff</th>
-                        <th className="text-right p-2">Intensity</th>
+                        <th className="text-right p-2">
+                          <div className="flex items-center justify-end gap-1">
+                            <span>Win Rate</span>
+                            <MetricInfoTooltip 
+                              metric="Win Rate" 
+                              explanation="Percentage of times the first brand ranks higher than the second brand. Higher is better - shows competitive advantage." 
+                            />
+                          </div>
+                        </th>
+                        <th className="text-right p-2">
+                          <div className="flex items-center justify-end gap-1">
+                            <span>Wins</span>
+                            <MetricInfoTooltip 
+                              metric="Head-to-Head Wins" 
+                              explanation="Number of times the first brand ranked higher than the second brand in direct comparisons." 
+                            />
+                          </div>
+                        </th>
+                        <th className="text-right p-2">
+                          <div className="flex items-center justify-end gap-1">
+                            <span>Comparisons</span>
+                            <MetricInfoTooltip 
+                              metric="Total Comparisons" 
+                              explanation="Total number of queries where both brands appeared and could be compared directly." 
+                            />
+                          </div>
+                        </th>
+                        <th className="text-right p-2">
+                          <div className="flex items-center justify-end gap-1">
+                            <span>Avg Rank Diff</span>
+                            <MetricInfoTooltip 
+                              metric="Average Rank Difference" 
+                              explanation="Average difference in ranking between the two brands. Negative means first brand ranks better, positive means second brand ranks better." 
+                            />
+                          </div>
+                        </th>
+                        <th className="text-right p-2">
+                          <div className="flex items-center justify-end gap-1">
+                            <span>Intensity</span>
+                            <MetricInfoTooltip 
+                              metric="Competitive Intensity" 
+                              explanation="How often these brands compete directly. Higher percentage means they appear together in more queries." 
+                            />
+                          </div>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -679,20 +838,44 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
                 <div className="p-4 border rounded-lg">
                   <h4 className="font-semibold mb-2">🤖 ChatGPT</h4>
                   <div className="space-y-1 text-sm">
-                    <div className="flex justify-between">
-                      <span>Total Queries:</span>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1">
+                        <span>Total Queries:</span>
+                        <MetricInfoTooltip 
+                          metric="Total Queries" 
+                          explanation="Number of queries run with this AI model. Shows how much data we have for this model." 
+                        />
+                      </div>
                       <span className="font-medium">2</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Avg Mentions:</span>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1">
+                        <span>Avg Mentions:</span>
+                        <MetricInfoTooltip 
+                          metric="Average Mentions" 
+                          explanation="Average number of brand mentions per query for this model. Higher is better - shows model's tendency to mention brands." 
+                        />
+                      </div>
                       <span className="font-medium">14.0</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Avg Rank:</span>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1">
+                        <span>Avg Rank:</span>
+                        <MetricInfoTooltip 
+                          metric="Average Rank" 
+                          explanation="Average ranking position of your brands with this model. Lower is better - shows model's preference for your brands." 
+                        />
+                      </div>
                       <span className="font-medium">4.2</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Bias Score:</span>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1">
+                        <span>Bias Score:</span>
+                        <MetricInfoTooltip 
+                          metric="Bias Score" 
+                          explanation="How much this model favors or disfavors your brands compared to others. Positive means it favors your brands, negative means it disfavors them." 
+                        />
+                      </div>
                       <span className="font-medium text-green-600">+0.3</span>
                     </div>
                   </div>
@@ -701,20 +884,44 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
                 <div className="p-4 border rounded-lg">
                   <h4 className="font-semibold mb-2">🧠 Claude</h4>
                   <div className="space-y-1 text-sm">
-                    <div className="flex justify-between">
-                      <span>Total Queries:</span>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1">
+                        <span>Total Queries:</span>
+                        <MetricInfoTooltip 
+                          metric="Total Queries" 
+                          explanation="Number of queries run with this AI model. Shows how much data we have for this model." 
+                        />
+                      </div>
                       <span className="font-medium">0</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Avg Mentions:</span>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1">
+                        <span>Avg Mentions:</span>
+                        <MetricInfoTooltip 
+                          metric="Average Mentions" 
+                          explanation="Average number of brand mentions per query for this model. Higher is better - shows model's tendency to mention brands." 
+                        />
+                      </div>
                       <span className="font-medium">-</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Avg Rank:</span>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1">
+                        <span>Avg Rank:</span>
+                        <MetricInfoTooltip 
+                          metric="Average Rank" 
+                          explanation="Average ranking position of your brands with this model. Lower is better - shows model's preference for your brands." 
+                        />
+                      </div>
                       <span className="font-medium">-</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Bias Score:</span>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1">
+                        <span>Bias Score:</span>
+                        <MetricInfoTooltip 
+                          metric="Bias Score" 
+                          explanation="How much this model favors or disfavors your brands compared to others. Positive means it favors your brands, negative means it disfavors them." 
+                        />
+                      </div>
                       <span className="font-medium text-gray-500">N/A</span>
                     </div>
                   </div>
@@ -723,20 +930,44 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
                 <div className="p-4 border rounded-lg">
                   <h4 className="font-semibold mb-2">💎 Gemini</h4>
                   <div className="space-y-1 text-sm">
-                    <div className="flex justify-between">
-                      <span>Total Queries:</span>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1">
+                        <span>Total Queries:</span>
+                        <MetricInfoTooltip 
+                          metric="Total Queries" 
+                          explanation="Number of queries run with this AI model. Shows how much data we have for this model." 
+                        />
+                      </div>
                       <span className="font-medium">0</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Avg Mentions:</span>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1">
+                        <span>Avg Mentions:</span>
+                        <MetricInfoTooltip 
+                          metric="Average Mentions" 
+                          explanation="Average number of brand mentions per query for this model. Higher is better - shows model's tendency to mention brands." 
+                        />
+                      </div>
                       <span className="font-medium">-</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Avg Rank:</span>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1">
+                        <span>Avg Rank:</span>
+                        <MetricInfoTooltip 
+                          metric="Average Rank" 
+                          explanation="Average ranking position of your brands with this model. Lower is better - shows model's preference for your brands." 
+                        />
+                      </div>
                       <span className="font-medium">-</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Bias Score:</span>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1">
+                        <span>Bias Score:</span>
+                        <MetricInfoTooltip 
+                          metric="Bias Score" 
+                          explanation="How much this model favors or disfavors your brands compared to others. Positive means it favors your brands, negative means it disfavors them." 
+                        />
+                      </div>
                       <span className="font-medium text-gray-500">N/A</span>
                     </div>
                   </div>

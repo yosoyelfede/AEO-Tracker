@@ -187,8 +187,11 @@ export interface ApiQueryResult {
 }
 
 export interface ApiMention {
-  rank: number
-  brands: {
+  brand: string
+  position: number
+  context: string
+  rank?: number
+  brands?: {
     name: string
   }
 }

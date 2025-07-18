@@ -6,7 +6,8 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "migrate:cascade-delete": "node scripts/run-migration.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.56.0",

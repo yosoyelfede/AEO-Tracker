@@ -80,6 +80,20 @@ export interface ForecastData {
   factors: string[]
 }
 
+export interface QueryEffectivenessMetrics {
+  queryId: string
+  query: string
+  totalMentions: number
+  uniqueBrands: number
+  avgRanking: number
+  effectivenessScore: number
+  sentiment: 'positive' | 'negative' | 'neutral'
+  keywords: string[]
+  successRate: number
+  queryType: string
+  createdAt: string
+}
+
 export interface TimeRange {
   start: Date
   end: Date

@@ -5,12 +5,30 @@ import { useAuth } from '@/components/auth-context'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { QueryResults } from '@/components/QueryResults'
 import { EnhancedAnalyticsDashboard } from '@/components/EnhancedAnalyticsDashboard'
 import { BrandListManager } from '@/components/BrandListManager'
 import { supabase } from '@/lib/supabase'
 import { Query, ApiQueryResponse, ApiQueryResult, ApiMention, HistoricalQuery } from '@/types'
-import { BarChart3, Search, History, Settings } from 'lucide-react'
+import { 
+  BarChart3, 
+  Search, 
+  History, 
+  Settings, 
+  User, 
+  LogOut, 
+  Sparkles,
+  Zap,
+  TrendingUp,
+  Clock,
+  Play,
+  Eye,
+  RefreshCw,
+  ChevronRight,
+  Activity
+} from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 
 interface QueryResult {
   id: string
@@ -46,13 +64,11 @@ export default function Dashboard() {
   const [selectedHistoricalQuery, setSelectedHistoricalQuery] = useState<HistoricalQuery | null>(null)
 
   const models = [
-    { id: 'chatgpt', name: 'ChatGPT', icon: '🤖', available: true },
-    { id: 'claude', name: 'Claude', icon: '🧠', available: true },
-    { id: 'gemini', name: 'Gemini', icon: '💎', available: true },
-    { id: 'perplexity', name: 'Perplexity', icon: '🔍', available: true }
+    { id: 'chatgpt', name: 'ChatGPT', icon: '🤖', available: true, color: 'from-blue-500 to-blue-600' },
+    { id: 'claude', name: 'Claude', icon: '🧠', available: true, color: 'from-orange-500 to-orange-600' },
+    { id: 'gemini', name: 'Gemini', icon: '💎', available: true, color: 'from-purple-500 to-purple-600' },
+    { id: 'perplexity', name: 'Perplexity', icon: '🔍', available: true, color: 'from-green-500 to-green-600' }
   ]
-
-  // const availableModels = models.filter(m => m.available)
 
   useEffect(() => {
     if (loading) return
@@ -87,7 +103,6 @@ export default function Dashboard() {
   const runQuery = async () => {
     if (!currentQuery.trim() || selectedModels.length === 0) return
 
-    // Check if user has selected a brand list
     if (!selectedBrandListId) {
       alert('Please select a brand list to track before running a query. If you just created an account, please wait a moment for the default brand list to load.')
       return
@@ -100,7 +115,7 @@ export default function Dashboard() {
 
     setIsRunning(true)
     setResults([])
-    setSelectedHistoricalQuery(null) // Clear any historical results
+    setSelectedHistoricalQuery(null)
 
     try {
       console.log('🚀 Starting query with models:', selectedModels)
@@ -112,26 +127,24 @@ export default function Dashboard() {
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include', // Include cookies for authentication
+        credentials: 'include',
         body: JSON.stringify({
           queryText: currentQuery,
           models: selectedModels,
-          brands: selectedBrandNames, // Use selected brand names
-          brandListId: selectedBrandListId, // Pass brand list ID for tracking
+          brands: selectedBrandNames,
+          brandListId: selectedBrandListId,
         }),
       })
 
       console.log('🚀 API response status:', response.status)
       console.log('🚀 API response headers:', Object.fromEntries(response.headers.entries()))
 
-      // Check if response is ok first
       if (!response.ok) {
         const errorText = await response.text()
         console.error('❌ API error response:', errorText)
         throw new Error(`API request failed (${response.status}): ${errorText}`)
       }
 
-      // Check content type before parsing as JSON
       const contentType = response.headers.get('content-type')
       if (!contentType || !contentType.includes('application/json')) {
         const responseText = await response.text()
@@ -140,13 +153,12 @@ export default function Dashboard() {
       }
 
       const data: ApiQueryResponse = await response.json()
-      console.log('🔍 API Response:', data) // Debug log
+      console.log('🔍 API Response:', data)
 
       if (data.success) {
-        console.log('🔍 Raw results before filtering:', JSON.stringify(data.results, null, 2)) // Debug log
-        // Transform the API response to match our QueryResult interface
+        console.log('🔍 Raw results before filtering:', JSON.stringify(data.results, null, 2))
         const transformedResults = data.results.map((result: ApiQueryResult) => {
-          console.log('🔍 Individual result:', result) // Debug log
+          console.log('🔍 Individual result:', result)
           
           if (result.success) {
             return {
@@ -154,10 +166,10 @@ export default function Dashboard() {
               model: result.model,
               response_text: result.response_text || result.responseText || '',
               created_at: new Date().toISOString(),
-              mentions: result.mentions?.map((mention: ApiMention) => ({
-                brand: mention.brands.name,
-                position: mention.rank,
-                context: `Ranked #${mention.rank}`
+              mentions: result.mentions?.map((mention: any) => ({
+                brand: mention.brand || mention.brands?.name || 'Unknown',
+                position: mention.position || mention.rank || 0,
+                context: mention.context || `Ranked #${mention.rank || 0}`
               })) || [],
               success: true as const,
               api_key_source: result.api_key_source,
@@ -172,7 +184,7 @@ export default function Dashboard() {
           }
         })
 
-        console.log('🔍 Transformed results:', transformedResults) // Debug log
+        console.log('🔍 Transformed results:', transformedResults)
         
         if (transformedResults.length === 0) {
           console.warn('⚠️ No results found')
@@ -180,16 +192,14 @@ export default function Dashboard() {
         }
         
         setResults(transformedResults)
-        fetchQueries() // Refresh the queries list
+        fetchQueries()
         
-        // Trigger analytics refresh
         setAnalyticsRefreshTrigger(prev => {
           const next = prev + 1;
           console.log('Analytics refresh trigger incremented:', next);
           return next;
         })
 
-        // Show message about API key usage
         const usedUserKeys = transformedResults.some((r: QueryResult | QueryError) => 'api_key_source' in r && r.api_key_source === 'user')
         const usedFreeQuery = transformedResults.some((r: QueryResult | QueryError) => 'used_free_query' in r && r.used_free_query)
         
@@ -199,7 +209,6 @@ export default function Dashboard() {
           alert('✅ Query completed using your API keys.')
         }
       } else {
-        // Handle API key requirement errors
         if (data.error === 'API_KEYS_REQUIRED') {
           if (confirm(`${data.message}\n\nWould you like to add your API keys now?`)) {
             router.push(data.redirect_to || '/profile?tab=api-keys')
@@ -220,7 +229,6 @@ export default function Dashboard() {
 
   const loadHistoricalQueryResults = async (queryId: string, prompt: string) => {
     try {
-      // Fetch the runs and their data for this specific query
       const { data, error } = await supabase
         .from('runs')
         .select(`
@@ -243,14 +251,12 @@ export default function Dashboard() {
         return
       }
 
-      // Transform the data to match ApiQueryResult interface for HistoricalQuery
       const apiResults: ApiQueryResult[] = data.map(run => {
-        // Convert mentions to the format expected by ApiMention
-        const mentions = run.mentions?.map((mention: { rank: number; brands: { name: string }[] }) => ({
-          rank: mention.rank,
-          brands: {
-            name: mention.brands[0]?.name || 'Unknown Brand'
-          }
+        const mentions: ApiMention[] = run.mentions?.map((mention: { rank: number; brands: { name: string }[] }) => ({
+          brand: mention.brands[0]?.name || 'Unknown Brand',
+          position: mention.rank,
+          context: `Ranked #${mention.rank}`,
+          rank: mention.rank
         })) || []
 
         return {
@@ -262,9 +268,7 @@ export default function Dashboard() {
         }
       })
 
-      // Transform the data to match QueryResult interface for QueryResults component
       const transformedResults: (QueryResult | QueryError)[] = data.map(run => {
-        // Convert mentions to the format expected by QueryResult
         const mentions = run.mentions?.map((mention: { rank: number; brands: { name: string }[] }, index: number) => ({
           brand: mention.brands[0]?.name || 'Unknown Brand',
           position: index,
@@ -281,15 +285,14 @@ export default function Dashboard() {
         }
       })
 
-      // Set the historical query results and switch to query tab to show them
       setSelectedHistoricalQuery({
         id: queryId,
         prompt,
         results: apiResults,
         models: apiResults.map(r => r.model)
       })
-      setResults(transformedResults) // Set the transformed results for display
-      setActiveTab('query') // Switch to query tab to show results
+      setResults(transformedResults)
+      setActiveTab('query')
     } catch (error) {
       console.error('Error loading historical query results:', error)
     }
@@ -297,217 +300,397 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-center"
+        >
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-primary border-t-transparent mx-auto mb-4"></div>
+          <p className="text-slate-600 font-medium">Loading your dashboard...</p>
+        </motion.div>
       </div>
     )
   }
 
   if (!user) {
-    return null // This will redirect in useEffect
+    return null
   }
 
   return (
-    <div className="min-h-screen bg-gray-50" data-testid="dashboard">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50" data-testid="dashboard">
+      {/* Enhanced Header */}
+      <motion.div 
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className="bg-white/80 backdrop-blur-xl shadow-lg border-b border-slate-200/50 sticky top-0 z-50"
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div className="flex items-center space-x-4">
-              <h1 className="text-2xl font-bold text-gray-900">AEO Tracker</h1>
+          <div className="flex justify-between items-center py-6">
+            <div className="flex items-center space-x-8">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-gradient-to-r from-primary to-primary/80 rounded-xl flex items-center justify-center">
+                  <Sparkles className="h-6 w-6 text-white" />
+                </div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+                  AEO Tracker
+                </h1>
+              </div>
               
-              {/* Navigation Tabs */}
-              <nav className="flex space-x-1">
-                <button
+              {/* Enhanced Navigation Tabs */}
+              <nav className="flex space-x-2 bg-slate-100/50 p-1 rounded-xl">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
                   onClick={() => setActiveTab('query')}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`flex items-center space-x-2 px-6 py-3 rounded-lg text-sm font-semibold transition-all duration-200 ${
                     activeTab === 'query'
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                      ? 'bg-white text-primary shadow-lg shadow-primary/20'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                   }`}
                 >
                   <Search className="h-4 w-4" />
-                  <span>Query</span>
-                </button>
-                <button
+                  <span>Query Builder</span>
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
                   onClick={() => setActiveTab('analytics')}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`flex items-center space-x-2 px-6 py-3 rounded-lg text-sm font-semibold transition-all duration-200 ${
                     activeTab === 'analytics'
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                      ? 'bg-white text-primary shadow-lg shadow-primary/20'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                   }`}
                 >
                   <BarChart3 className="h-4 w-4" />
                   <span>Analytics</span>
-                </button>
+                </motion.button>
               </nav>
             </div>
             
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-700">Welcome, {user.email}</span>
+              <div className="flex items-center space-x-3 bg-white/50 px-4 py-2 rounded-xl">
+                <div className="w-8 h-8 bg-gradient-to-r from-primary to-primary/80 rounded-full flex items-center justify-center">
+                  <User className="h-4 w-4 text-white" />
+                </div>
+                <span className="text-sm font-medium text-slate-700">{user.email}</span>
+              </div>
               <Button 
                 variant="outline" 
                 onClick={() => router.push('/profile')}
-                className="flex items-center space-x-2"
+                className="flex items-center space-x-2 bg-white/50 hover:bg-white border-slate-200"
               >
                 <Settings className="h-4 w-4" />
                 <span>Profile</span>
               </Button>
-              <Button variant="outline" onClick={signOut}>
-                Sign Out
+              <Button 
+                variant="outline" 
+                onClick={signOut}
+                className="flex items-center space-x-2 bg-white/50 hover:bg-white border-slate-200"
+              >
+                <LogOut className="h-4 w-4" />
+                <span>Sign Out</span>
               </Button>
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === 'query' ? (
-          <div className="space-y-8">
-            {/* Brand List Manager - NEW */}
-            <BrandListManager 
-              selectedBrandListId={selectedBrandListId}
-              onBrandListSelect={(listId, brandNames) => {
-                setSelectedBrandListId(listId)
-                setSelectedBrandNames(brandNames)
-              }}
-            />
-
-            {/* Query Input Section */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Run New Query</CardTitle>
-                <CardDescription>
-                  Ask multiple AI models and track brand mentions for AEO optimization
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Query Input */}
-                <div>
-                  <label htmlFor="query" className="block text-sm font-medium text-gray-700 mb-2">
-                    Your Query
-                  </label>
-                  <textarea
-                    id="query"
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="e.g., What's the best restaurant in Santiago? or Which retail store has the best deals?"
-                    value={currentQuery}
-                    onChange={(e) => setCurrentQuery(e.target.value)}
-                  />
-                </div>
-
-                {/* Model Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">
-                    Select AI Models
-                  </label>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {models.map((model) => (
-                      <div key={model.id} className="relative">
-                        <button
-                          onClick={() => model.available && handleModelToggle(model.id)}
-                          disabled={!model.available}
-                          className={`w-full p-4 border rounded-lg text-center transition-all ${
-                            !model.available
-                              ? 'opacity-50 cursor-not-allowed bg-gray-100 border-gray-200'
-                              : selectedModels.includes(model.id)
-                              ? 'border-blue-500 bg-blue-50 text-blue-700'
-                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          <div className="text-2xl mb-1">{model.icon}</div>
-                          <div className="font-medium text-sm">{model.name}</div>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Run Button */}
-                <Button
-                  onClick={runQuery}
-                  disabled={!currentQuery.trim() || selectedModels.length === 0 || isRunning || !selectedBrandListId}
-                  className="w-full"
-                  size="lg"
+        <AnimatePresence mode="wait">
+          {activeTab === 'query' ? (
+            <motion.div
+              key="query"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-8"
+            >
+              {/* Quick Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <motion.div
+                  whileHover={{ scale: 1.02 }}
+                  className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl"
                 >
-                  {isRunning 
-                    ? 'Running on selected models...' 
-                    : !selectedBrandListId 
-                    ? 'Select a brand list to run query'
-                    : selectedBrandNames.length === 0
-                    ? 'Add brands to your list to run query'
-                    : `Run on selected models (${selectedModels.length})`
-                  }
-                </Button>
-              </CardContent>
-            </Card>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-slate-600 text-sm font-medium">Total Queries</p>
+                      <p className="text-3xl font-bold text-slate-900">{queries.length}</p>
+                    </div>
+                    <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
+                      <Activity className="h-6 w-6 text-white" />
+                    </div>
+                  </div>
+                </motion.div>
+                
+                <motion.div
+                  whileHover={{ scale: 1.02 }}
+                  className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-slate-600 text-sm font-medium">Active Models</p>
+                      <p className="text-3xl font-bold text-slate-900">{selectedModels.length}</p>
+                    </div>
+                    <div className="w-12 h-12 bg-gradient-to-r from-green-500 to-green-600 rounded-xl flex items-center justify-center">
+                      <Zap className="h-6 w-6 text-white" />
+                    </div>
+                  </div>
+                </motion.div>
+                
+                <motion.div
+                  whileHover={{ scale: 1.02 }}
+                  className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-slate-600 text-sm font-medium">Tracked Brands</p>
+                      <p className="text-3xl font-bold text-slate-900">{selectedBrandNames.length}</p>
+                    </div>
+                    <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-purple-600 rounded-xl flex items-center justify-center">
+                      <TrendingUp className="h-6 w-6 text-white" />
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
 
-            {/* Results Section - Show either current results or historical results */}
-            {(results.length > 0 || selectedHistoricalQuery) && (
-              <QueryResults 
-                results={results}
-                queryText={selectedHistoricalQuery ? selectedHistoricalQuery.prompt : currentQuery}
-                isHistorical={!!selectedHistoricalQuery}
-                onClearHistorical={() => setSelectedHistoricalQuery(null)}
-                queryBrands={selectedBrandNames} // Pass the brands used in the query
-                selectedModels={selectedHistoricalQuery ? selectedHistoricalQuery.models : selectedModels}
-              />
-            )}
+              {/* Brand List Manager */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+              >
+                <BrandListManager 
+                  selectedBrandListId={selectedBrandListId}
+                  onBrandListSelect={(listId, brandNames) => {
+                    setSelectedBrandListId(listId)
+                    setSelectedBrandNames(brandNames)
+                  }}
+                />
+              </motion.div>
 
-            {/* Recent Queries */}
-            {queries.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <History className="h-5 w-5" />
-                    <span>Recent Queries</span>
-                  </CardTitle>
-                  <CardDescription>Your query history</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {queries.slice(0, 5).map((query) => (
-                      <div key={query.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex-1">
-                          <p className="font-medium">{query.prompt}</p>
-                          <p className="text-sm text-gray-500">
-                            {new Date(query.created_at).toLocaleDateString()}
-                          </p>
+              {/* Enhanced Query Input Section */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+              >
+                <Card className="bg-white/80 backdrop-blur-sm border-white/20 shadow-xl">
+                  <CardHeader className="pb-6">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-gradient-to-r from-primary to-primary/80 rounded-xl flex items-center justify-center">
+                        <Search className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-2xl font-bold text-slate-900">Run New Query</CardTitle>
+                        <CardDescription className="text-slate-600">
+                          Ask multiple AI models and track brand mentions for AEO optimization
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-8">
+                    {/* Enhanced Query Input */}
+                    <div className="space-y-3">
+                      <label htmlFor="query" className="block text-sm font-semibold text-slate-700">
+                        Your Query
+                      </label>
+                      <textarea
+                        id="query"
+                        rows={4}
+                        className="w-full px-4 py-3 border border-slate-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200 resize-none bg-white/50 backdrop-blur-sm"
+                        placeholder="e.g., What's the best restaurant in Santiago? or Which retail store has the best deals?"
+                        value={currentQuery}
+                        onChange={(e) => setCurrentQuery(e.target.value)}
+                      />
+                    </div>
+
+                    {/* Enhanced Model Selection */}
+                    <div className="space-y-4">
+                      <label className="block text-sm font-semibold text-slate-700">
+                        Select AI Models ({selectedModels.length} selected)
+                      </label>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {models.map((model) => (
+                          <motion.div
+                            key={model.id}
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            className="relative"
+                          >
+                            <button
+                              onClick={() => model.available && handleModelToggle(model.id)}
+                              disabled={!model.available}
+                              className={`w-full p-6 border-2 rounded-2xl text-center transition-all duration-200 ${
+                                !model.available
+                                  ? 'opacity-50 cursor-not-allowed bg-slate-100 border-slate-200'
+                                  : selectedModels.includes(model.id)
+                                  ? `border-primary bg-gradient-to-br ${model.color} text-white shadow-lg shadow-primary/25`
+                                  : 'border-slate-200 hover:border-primary/50 hover:bg-white/50 bg-white/30 backdrop-blur-sm'
+                              }`}
+                            >
+                              <div className="text-3xl mb-2">{model.icon}</div>
+                              <div className="font-semibold text-sm">{model.name}</div>
+                              {selectedModels.includes(model.id) && (
+                                <motion.div
+                                  initial={{ scale: 0 }}
+                                  animate={{ scale: 1 }}
+                                  className="absolute -top-2 -right-2 w-6 h-6 bg-white rounded-full flex items-center justify-center shadow-lg"
+                                >
+                                  <div className="w-3 h-3 bg-primary rounded-full"></div>
+                                </motion.div>
+                              )}
+                            </button>
+                          </motion.div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Enhanced Run Button */}
+                    <motion.div
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      <Button
+                        onClick={runQuery}
+                        disabled={!currentQuery.trim() || selectedModels.length === 0 || isRunning || !selectedBrandListId}
+                        className="w-full h-14 text-lg font-semibold bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-lg shadow-primary/25 rounded-xl"
+                        size="lg"
+                      >
+                        {isRunning ? (
+                          <div className="flex items-center space-x-3">
+                            <RefreshCw className="h-5 w-5 animate-spin" />
+                            <span>Running on {selectedModels.length} models...</span>
+                          </div>
+                        ) : !selectedBrandListId ? (
+                          <div className="flex items-center space-x-3">
+                            <Eye className="h-5 w-5" />
+                            <span>Select a brand list to run query</span>
+                          </div>
+                        ) : selectedBrandNames.length === 0 ? (
+                          <div className="flex items-center space-x-3">
+                            <TrendingUp className="h-5 w-5" />
+                            <span>Add brands to your list to run query</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center space-x-3">
+                            <Play className="h-5 w-5" />
+                            <span>Run on {selectedModels.length} models</span>
+                          </div>
+                        )}
+                      </Button>
+                    </motion.div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+
+              {/* Results Section */}
+              <AnimatePresence>
+                {(results.length > 0 || selectedHistoricalQuery) && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <QueryResults 
+                      results={results}
+                      queryText={selectedHistoricalQuery ? selectedHistoricalQuery.prompt : currentQuery}
+                      isHistorical={!!selectedHistoricalQuery}
+                      onClearHistorical={() => setSelectedHistoricalQuery(null)}
+                      queryBrands={selectedBrandNames}
+                      selectedModels={selectedHistoricalQuery ? selectedHistoricalQuery.models : selectedModels}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Enhanced Recent Queries */}
+              {queries.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3 }}
+                >
+                  <Card className="bg-white/80 backdrop-blur-sm border-white/20 shadow-xl">
+                    <CardHeader>
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-gradient-to-r from-slate-500 to-slate-600 rounded-xl flex items-center justify-center">
+                          <History className="h-5 w-5 text-white" />
                         </div>
-                        <div className="flex space-x-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => loadHistoricalQueryResults(query.id, query.prompt)}
-                          >
-                            View Results
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setCurrentQuery(query.prompt)
-                              setSelectedHistoricalQuery(null)
-                              setActiveTab('query')
-                            }}
-                          >
-                            Run Again
-                          </Button>
+                        <div>
+                          <CardTitle className="text-xl font-bold text-slate-900">Recent Queries</CardTitle>
+                          <CardDescription className="text-slate-600">Your query history</CardDescription>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        ) : (
-          <EnhancedAnalyticsDashboard 
-            refreshTrigger={analyticsRefreshTrigger}
-          />
-        )}
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        {queries.slice(0, 5).map((query, index) => (
+                          <motion.div
+                            key={query.id}
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: index * 0.1 }}
+                            className="flex items-center justify-between p-4 bg-white/50 backdrop-blur-sm rounded-xl border border-white/20 hover:bg-white/70 transition-all duration-200"
+                          >
+                            <div className="flex-1">
+                              <p className="font-semibold text-slate-900 mb-1">{query.prompt}</p>
+                              <div className="flex items-center space-x-2">
+                                <Clock className="h-4 w-4 text-slate-400" />
+                                <p className="text-sm text-slate-500">
+                                  {new Date(query.created_at).toLocaleDateString()}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex space-x-3">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => loadHistoricalQueryResults(query.id, query.prompt)}
+                                className="bg-white/50 hover:bg-white border-slate-200"
+                              >
+                                <Eye className="h-4 w-4 mr-2" />
+                                View Results
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setCurrentQuery(query.prompt)
+                                  setSelectedHistoricalQuery(null)
+                                  setActiveTab('query')
+                                }}
+                                className="bg-white/50 hover:bg-white border-slate-200"
+                              >
+                                <Play className="h-4 w-4 mr-2" />
+                                Run Again
+                              </Button>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              )}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="analytics"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              <EnhancedAnalyticsDashboard 
+                refreshTrigger={analyticsRefreshTrigger}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   )

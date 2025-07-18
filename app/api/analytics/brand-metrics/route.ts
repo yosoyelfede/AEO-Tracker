@@ -64,6 +64,7 @@ export async function GET(request: NextRequest) {
           created_at,
           mentions (
             rank,
+            brand_id,
             brands (
               name
             )
@@ -101,11 +102,13 @@ export async function GET(request: NextRequest) {
         mentions: run.mentions?.map(mention => ({
           ...mention,
           brands: {
-            name: mention.brands?.[0]?.name || ''
+            name: mention.brands?.name || mention.brands?.[0]?.name || ''
           }
         })) || []
       })) || []
     }))
+    
+
     
     const brandMetrics = calculateBrandMetrics(queryData, brandNames)
     const competitiveAnalysis = calculateCompetitiveAnalysis(queryData, brandNames)

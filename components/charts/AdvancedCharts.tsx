@@ -28,7 +28,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Download, Eye, EyeOff, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { Download, Eye, EyeOff, TrendingUp, TrendingDown, Minus, Info } from 'lucide-react'
 
 // Color schemes for charts
 export const BRAND_COLORS = [
@@ -301,6 +301,25 @@ export const MarketShareChart: React.FC<MarketShareChartProps> = ({
   )
 }
 
+// Metric Info Tooltip Component
+interface MetricInfoTooltipProps {
+  metric: string
+  explanation: string
+}
+
+const MetricInfoTooltip: React.FC<MetricInfoTooltipProps> = ({ metric, explanation }) => {
+  return (
+    <div className="group relative inline-block">
+      <Info className="w-4 h-4 text-gray-400 hover:text-gray-600 cursor-help" />
+      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+        <div className="font-semibold mb-1">{metric}</div>
+        <div className="max-w-xs">{explanation}</div>
+        <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+      </div>
+    </div>
+  )
+}
+
 // Competitive Analysis Radar Chart
 interface CompetitiveRadarChartProps {
   data: {
@@ -322,38 +341,84 @@ export const CompetitiveRadarChart: React.FC<CompetitiveRadarChartProps> = ({
   description,
   height = 400
 }) => {
-  const radarData = data.map(brand => ({
-    brand: brand.brand,
-    'Mention Rate': brand.mentionRate,
-    'Avg Rank': 10 - brand.averageRank, // Invert for better visualization
-    'Share of Voice': brand.shareOfVoice,
-    'Top Performer Rate': brand.topPerformerRate,
-    'Model Coverage': (brand.modelCoverage / 4) * 100 // Normalize to percentage
-  }))
+  // Invert the data structure: metrics become axes, brands become data series
+  const metrics = [
+    { key: 'mentionRate', label: 'Mention Rate', explanation: 'Percentage of queries where this brand appears. Higher is better - shows how often the brand is mentioned across all searches.' },
+    { key: 'avgRank', label: 'Avg Rank', explanation: 'Average ranking position when the brand appears. Lower is better - 1st place is best, 10th place is worst.' },
+    { key: 'shareOfVoice', label: 'Share of Voice', explanation: 'Percentage of total brand mentions this brand represents. Higher is better - shows market dominance.' },
+    { key: 'topPerformerRate', label: 'Top Performer Rate', explanation: 'Percentage of times this brand achieved 1st place ranking. Higher is better - shows leadership performance.' },
+    { key: 'modelCoverage', label: 'Model Coverage', explanation: 'Number of AI models that mentioned this brand. Higher is better - shows broad AI recognition.' }
+  ]
+
+  // Transform data for inverted radar chart
+  const radarData = metrics.map(metric => {
+    const dataPoint: any = { metric: metric.label }
+    data.forEach((brand, index) => {
+      let value: number
+      switch (metric.key) {
+        case 'mentionRate':
+          value = brand.mentionRate
+          break
+        case 'avgRank':
+          value = Math.max(0, 100 - (brand.averageRank * 10)) // Invert and scale: 1st rank = 90, 10th rank = 0
+          break
+        case 'shareOfVoice':
+          value = brand.shareOfVoice
+          break
+        case 'topPerformerRate':
+          value = brand.topPerformerRate
+          break
+        case 'modelCoverage':
+          value = (brand.modelCoverage / 4) * 100 // Normalize to percentage
+          break
+        default:
+          value = 0
+      }
+      dataPoint[brand.brand] = value
+    })
+    return dataPoint
+  })
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>{title}</CardTitle>
+            {description && <CardDescription>{description}</CardDescription>}
+          </div>
+          <div className="flex items-center gap-4 text-sm text-gray-600">
+            {metrics.map((metric, index) => (
+              <div key={metric.key} className="flex items-center gap-1">
+                <span>{metric.label}</span>
+                <MetricInfoTooltip metric={metric.label} explanation={metric.explanation} />
+              </div>
+            ))}
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={height}>
           <RadarChart data={radarData}>
             <PolarGrid />
-            <PolarAngleAxis dataKey="brand" />
+            <PolarAngleAxis dataKey="metric" />
             <PolarRadiusAxis angle={90} domain={[0, 100]} />
-            {Object.keys(radarData[0] || {}).filter(key => key !== 'brand').map((metric, index) => (
+            {data.map((brand, index) => (
               <Radar
-                key={metric}
-                name={metric}
-                dataKey={metric}
+                key={brand.brand}
+                name={brand.brand}
+                dataKey={brand.brand}
                 stroke={BRAND_COLORS[index % BRAND_COLORS.length]}
                 fill={BRAND_COLORS[index % BRAND_COLORS.length]}
                 fillOpacity={0.3}
               />
             ))}
-            <Tooltip />
+            <Tooltip 
+              formatter={(value: number, name: string) => {
+                if (name === 'metric') return [name, '']
+                return [value.toFixed(1), name]
+              }}
+            />
             <Legend />
           </RadarChart>
         </ResponsiveContainer>
