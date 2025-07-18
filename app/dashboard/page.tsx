@@ -5,10 +5,9 @@ import { useAuth } from '@/components/auth-context'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { QueryResults } from '@/components/QueryResults'
+import QueryResults from '@/components/QueryResults'
 import { EnhancedAnalyticsDashboard } from '@/components/EnhancedAnalyticsDashboard'
-import { BrandListManager } from '@/components/BrandListManager'
+import BrandListManager from '@/components/BrandListManager'
 import { supabase } from '@/lib/supabase'
 import { Query, ApiQueryResponse, ApiQueryResult, ApiMention, HistoricalQuery } from '@/types'
 import { 
@@ -25,7 +24,6 @@ import {
   Play,
   Eye,
   RefreshCw,
-  ChevronRight,
   Activity
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -166,10 +164,10 @@ export default function Dashboard() {
               model: result.model,
               response_text: result.response_text || result.responseText || '',
               created_at: new Date().toISOString(),
-              mentions: result.mentions?.map((mention: any) => ({
-                brand: mention.brand || mention.brands?.name || 'Unknown',
-                position: mention.position || mention.rank || 0,
-                context: mention.context || `Ranked #${mention.rank || 0}`
+              mentions: result.mentions?.map((mention) => ({
+                brand: mention.brand || 'Unknown',
+                position: mention.position || 0,
+                context: mention.context || `Ranked #${mention.position || 0}`
               })) || [],
               success: true as const,
               api_key_source: result.api_key_source,
@@ -597,11 +595,12 @@ export default function Dashboard() {
                   >
                     <QueryResults 
                       results={results}
-                      queryText={selectedHistoricalQuery ? selectedHistoricalQuery.prompt : currentQuery}
-                      isHistorical={!!selectedHistoricalQuery}
-                      onClearHistorical={() => setSelectedHistoricalQuery(null)}
-                      queryBrands={selectedBrandNames}
-                      selectedModels={selectedHistoricalQuery ? selectedHistoricalQuery.models : selectedModels}
+                      isRunning={isRunning}
+                      onRefresh={() => {
+                        if (currentQuery.trim() && selectedModels.length > 0) {
+                          runQuery()
+                        }
+                      }}
                     />
                   </motion.div>
                 )}

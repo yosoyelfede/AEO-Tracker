@@ -1,113 +1,25 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { 
-  Filter,
   Target,
-  Zap,
-  Award,
-  Users,
-  Brain,
-  CheckCircle,
-  ArrowLeft,
-  Download,
   TrendingUp,
-  TrendingDown,
-  Minus,
-  Crown,
   BarChart3,
-  Calendar,
   Activity,
-  Lightbulb,
-  Info
+  RefreshCw
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/auth-context'
-import { QueryResults } from '@/components/QueryResults'
-import type { ApiQueryResult } from '@/types'
+import AdvancedCharts from '@/components/charts/AdvancedCharts'
 
-// Import enhanced analytics utilities
-import {
-  exportAnalyticsData,
-  type BrandMetrics,
-  type CompetitiveMetrics,
-  type TrendData,
-  type ForecastData
-} from '@/lib/analytics'
-
-// Import advanced chart components
-import {
-  TimeSeriesChart,
-  MarketShareChart,
-  CompetitiveRadarChart,
-  ScatterPlot,
-  BRAND_COLORS
-} from '@/components/charts/AdvancedCharts'
-
-// Metric Info Tooltip Component
-interface MetricInfoTooltipProps {
-  metric: string
-  explanation: string
-}
-
-const MetricInfoTooltip: React.FC<MetricInfoTooltipProps> = ({ metric, explanation }) => {
-  const [showTooltip, setShowTooltip] = useState(false)
-
-  const handleMouseEnter = () => {
-    setShowTooltip(true)
-  }
-
-  const handleMouseLeave = () => {
-    setShowTooltip(false)
-  }
-
-  return (
-    <div 
-      className="relative inline-block"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-    >
-      <Info className="w-4 h-4 text-gray-400 hover:text-gray-600 cursor-help" />
-      {showTooltip && (
-        <div 
-          className="absolute left-6 top-0 w-80 h-80 bg-gray-700 text-white text-sm rounded-lg shadow-xl pointer-events-none z-[9999] p-6 flex flex-col justify-center"
-        >
-          <div className="font-bold text-lg mb-4">{metric}</div>
-          <div className="text-base leading-relaxed">{explanation}</div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// Enhanced Types
 interface BrandList {
   id: string
   name: string
   description: string
   items: { id: string; brand_name: string }[]
-}
-
-interface EnhancedAnalyticsData {
-  brandMetrics: BrandMetrics[]
-  competitiveAnalysis: CompetitiveMetrics[]
-  trends: TrendData[]
-  forecasts: ForecastData | null
-  summary: {
-    totalQueries: number
-    totalMentions: number
-    averageMentionRate: number
-    averageRank: number
-    topPerformer: BrandMetrics | null
-  }
-  timeRange: {
-    start: string
-    end: string
-    days: number
-  }
 }
 
 interface EnhancedAnalyticsDashboardProps {
@@ -118,25 +30,9 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
   const { user } = useAuth()
   const [brandLists, setBrandLists] = useState<BrandList[]>([])
   const [selectedBrandListId, setSelectedBrandListId] = useState<string | null>(null)
-  const [selectedBrands, setSelectedBrands] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
-  const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('30d')
-  
-  // Enhanced analytics data
-  const [analyticsData, setAnalyticsData] = useState<EnhancedAnalyticsData | null>(null)
-  
-  // UI State
-  const [activeTab, setActiveTab] = useState<'overview' | 'brands' | 'competitive' | 'models' | 'queries' | 'forecasts'>('overview')
-  const [selectedHistoricalQuery, setSelectedHistoricalQuery] = useState<{
-    id: string
-    prompt: string
-    results: ApiQueryResult[]
-  } | null>(null)
-  const [showForecasts, setShowForecasts] = useState(false)
 
-
-
-  const fetchBrandLists = useCallback(async () => {
+  const fetchBrandLists = async () => {
     if (!user) return
     
     setLoading(true)
@@ -164,1070 +60,115 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
       // Auto-select first list if none selected
       if (!selectedBrandListId && lists.length > 0) {
         setSelectedBrandListId(lists[0].id)
-        setSelectedBrands(lists[0].items.map(item => item.brand_name))
       }
     }
     setLoading(false)
+  }
+
+  useEffect(() => {
+    fetchBrandLists()
   }, [user, selectedBrandListId])
 
-  const fetchEnhancedAnalyticsData = useCallback(async () => {
-    if (!selectedBrandListId || !user) {
-      console.log('No brand list selected or user not authenticated')
-      return
-    }
-
-    setLoading(true)
-
-    try {
-      console.log('Fetching analytics data for brand list:', selectedBrandListId)
-      
-      // Use the new API endpoint
-      const response = await fetch(
-        `/api/analytics/brand-metrics?brandListId=${selectedBrandListId}&timeRange=${timeRange}&includeForecasts=${showForecasts}`,
-        {
-          credentials: 'include', // Include cookies for authentication
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      )
-      
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error('API Response not OK:', response.status, errorText)
-        throw new Error(`Failed to fetch analytics data: ${response.status} ${errorText}`)
-      }
-
-      const result = await response.json()
-      
-      if (result.success) {
-        setAnalyticsData(result.data)
-        console.log('Analytics data loaded successfully:', result.data)
-      } else {
-        console.error('Analytics API error:', result.error)
-        setAnalyticsData(null)
-      }
-
-    } catch (error) {
-      console.error('Error fetching enhanced analytics:', error)
-      setAnalyticsData(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [selectedBrandListId, user, timeRange, showForecasts])
-
-  // useEffect hooks after function declarations
   useEffect(() => {
-    if (user) {
+    if (refreshTrigger) {
       fetchBrandLists()
     }
-  }, [user, fetchBrandLists])
-
-  useEffect(() => {
-    if (selectedBrandListId) {
-      fetchEnhancedAnalyticsData()
-    }
-  }, [selectedBrandListId, timeRange, refreshTrigger, showForecasts, fetchEnhancedAnalyticsData])
-
-  const toggleBrandFilter = (brand: string) => {
-    setSelectedBrands(prev => {
-      const newSelection = prev.includes(brand) 
-        ? prev.filter(b => b !== brand)
-        : [...prev, brand]
-      
-      // If no brands selected, show all
-      if (newSelection.length === 0) {
-        const allBrands = brandLists.find(list => list.id === selectedBrandListId)?.items.map(item => item.brand_name) || []
-        return allBrands
-      }
-      
-      return newSelection
-    })
-  }
-
-  const selectAllBrands = () => {
-    const allBrands = brandLists.find(list => list.id === selectedBrandListId)?.items.map(item => item.brand_name) || []
-    setSelectedBrands(allBrands)
-  }
-
-  const clearBrandSelection = () => {
-    setSelectedBrands([])
-  }
-
-  const exportData = (format: 'csv' | 'json') => {
-    if (!analyticsData) return
-
-    const dataToExport = {
-      brandMetrics: analyticsData.brandMetrics.filter(metric => 
-        selectedBrands.length === 0 || selectedBrands.includes(metric.brand)
-      ),
-      competitiveAnalysis: analyticsData.competitiveAnalysis,
-      summary: analyticsData.summary,
-      timeRange: analyticsData.timeRange
-    }
-
-    const exportedData = exportAnalyticsData([dataToExport], format)
-    const blob = new Blob([exportedData], { 
-      type: format === 'json' ? 'application/json' : 'text/csv' 
-    })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `aeo-analytics-${new Date().toISOString().split('T')[0]}.${format}`
-    a.click()
-  }
-
-  // Filter data based on selected brands
-  const filteredBrandMetrics = analyticsData?.brandMetrics.filter(metric => 
-    selectedBrands.length === 0 || selectedBrands.includes(metric.brand)
-  ) || []
-
-
-
-  const getTrendIcon = (trend: 'up' | 'down' | 'stable') => {
-    switch (trend) {
-      case 'up': return <TrendingUp className="h-4 w-4 text-green-500" />
-      case 'down': return <TrendingDown className="h-4 w-4 text-red-500" />
-      default: return <Minus className="h-4 w-4 text-gray-500" />
-    }
-  }
+  }, [refreshTrigger])
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
-      </div>
+      <Card>
+        <CardContent className="p-8 text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Loading Analytics...</h3>
+          <p className="text-gray-600">Please wait while we fetch your data.</p>
+        </CardContent>
+      </Card>
     )
   }
 
-  if (!selectedBrandListId) {
+  if (brandLists.length === 0) {
     return (
-      <div className="p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Select a Brand List</CardTitle>
-            <CardDescription>Choose a brand list to view enhanced analytics</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {brandLists.map(list => (
-                <Button
-                  key={list.id}
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() => setSelectedBrandListId(list.id)}
-                >
-                  {list.name} ({list.items.length} brands)
-                </Button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardContent className="p-8 text-center">
+          <Target className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">No Brand Lists Found</h3>
+          <p className="text-gray-600">Create a brand list to start tracking analytics.</p>
+        </CardContent>
+      </Card>
     )
   }
-
-  const selectedBrandList = brandLists.find(list => list.id === selectedBrandListId)
 
   return (
     <div className="space-y-6">
-      {/* Header with Enhanced Controls */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between items-start">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Enhanced AEO Analytics Dashboard</h1>
-          <p className="text-gray-600 mt-1">
-            {selectedBrandList?.name} • {filteredBrandMetrics.length} brands tracked
-          </p>
-          {analyticsData && (
-            <div className="flex items-center gap-4 mt-2">
-              <Badge variant="outline">
-                <Calendar className="h-3 w-3 mr-1" />
-                {new Date(analyticsData.timeRange.start).toLocaleDateString()} - {new Date(analyticsData.timeRange.end).toLocaleDateString()}
-              </Badge>
-              <Badge variant="outline">
-                <Activity className="h-3 w-3 mr-1" />
-                {analyticsData.summary.totalQueries} queries
-              </Badge>
-            </div>
-          )}
+          <h2 className="text-2xl font-bold text-gray-900">Enhanced Analytics Dashboard</h2>
+          <p className="text-gray-600">Advanced insights and performance tracking</p>
         </div>
-        
-        <div className="flex flex-col sm:flex-row gap-2">
-          {/* Time Range Selector */}
-          <div className="flex rounded-lg border">
-            {(['7d', '30d', '90d'] as const).map((range) => (
-              <Button
-                key={range}
-                variant={timeRange === range ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setTimeRange(range)}
-                className="rounded-none first:rounded-l-lg last:rounded-r-lg"
-              >
-                {range === '7d' ? '7 days' : range === '30d' ? '30 days' : '90 days'}
-              </Button>
-            ))}
-          </div>
-
-          {/* Brand List Selector */}
-          <select
-            value={selectedBrandListId}
-            onChange={(e) => {
-              setSelectedBrandListId(e.target.value)
-              const selectedList = brandLists.find(list => list.id === e.target.value)
-              if (selectedList) {
-                setSelectedBrands(selectedList.items.map(item => item.brand_name))
-              } else {
-                setSelectedBrands([])
-              }
-            }}
-            className="px-3 py-2 border rounded-lg"
-          >
-            {brandLists.map(list => (
-              <option key={list.id} value={list.id}>
-                {list.name}
-              </option>
-            ))}
-          </select>
-
-          {/* Export Buttons */}
-          <div className="flex gap-1">
-            <Button variant="outline" size="sm" onClick={() => exportData('json')}>
-              <Download className="h-4 w-4 mr-1" />
-              JSON
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => exportData('csv')}>
-              <Download className="h-4 w-4 mr-1" />
-              CSV
-            </Button>
-          </div>
-        </div>
+        <Button variant="outline" onClick={fetchBrandLists}>
+          <RefreshCw className="w-4 h-4 mr-2" />
+          Refresh
+        </Button>
       </div>
 
-      {/* Brand Filter Controls */}
+      {/* Brand List Selection */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
-            Brand Filters
+          <CardTitle className="flex items-center">
+            <Target className="w-5 h-5 mr-2" />
+            Select Brand List for Analytics
           </CardTitle>
-          <CardDescription>
-            Select specific brands to analyze. Data and charts will update automatically.
-          </CardDescription>
+          <CardDescription>Choose which brand list to analyze</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-2 mb-4">
-            <Button size="sm" variant="outline" onClick={selectAllBrands}>
-              Select All
-            </Button>
-            <Button size="sm" variant="outline" onClick={clearBrandSelection}>
-              Clear Selection
-            </Button>
-          </div>
-          
-          <div className="flex flex-wrap gap-2">
-            {selectedBrandList?.items.map((item, index) => {
-              const isSelected = selectedBrands.includes(item.brand_name)
-              return (
-                <Badge
-                  key={item.id}
-                  variant={isSelected ? "default" : "outline"}
-                  className="cursor-pointer hover:bg-gray-100"
-                  style={{ 
-                    backgroundColor: isSelected ? BRAND_COLORS[index % BRAND_COLORS.length] : undefined,
-                    borderColor: BRAND_COLORS[index % BRAND_COLORS.length]
-                  }}
-                  onClick={() => toggleBrandFilter(item.brand_name)}
-                >
-                  {item.brand_name}
-                  {isSelected && <CheckCircle className="h-3 w-3 ml-1" />}
-                </Badge>
-              )
-            })}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {brandLists.map((list) => (
+              <Card 
+                key={list.id}
+                className={`cursor-pointer transition-all duration-200 hover:shadow-lg ${
+                  selectedBrandListId === list.id 
+                    ? 'ring-2 ring-blue-500 bg-blue-50' 
+                    : 'hover:bg-gray-50'
+                }`}
+                onClick={() => setSelectedBrandListId(list.id)}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold text-gray-900">{list.name}</h3>
+                    <Badge variant="secondary">
+                      {list.items.length} brands
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-3">
+                    {list.description || 'No description'}
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    {list.items.slice(0, 3).map((item) => (
+                      <Badge key={item.id} variant="outline" className="text-xs">
+                        {item.brand_name}
+                      </Badge>
+                    ))}
+                    {list.items.length > 3 && (
+                      <Badge variant="outline" className="text-xs">
+                        +{list.items.length - 3} more
+                      </Badge>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         </CardContent>
       </Card>
 
-      {/* Enhanced Tab Navigation */}
-      <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
-        {[
-          { id: 'overview', label: 'Overview', icon: Target },
-          { id: 'brands', label: 'Brand Performance', icon: Crown },
-          { id: 'competitive', label: 'Competitive Analysis', icon: Award },
-          { id: 'models', label: 'Model Insights', icon: Brain },
-          { id: 'queries', label: 'Query Intelligence', icon: Zap },
-          { id: 'forecasts', label: 'Forecasts', icon: TrendingUp }
-        ].map(tab => {
-          const Icon = tab.icon
-          return (
-            <Button
-              key={tab.id}
-              variant={activeTab === tab.id ? 'default' : 'ghost'}
-              size="sm"
-                              onClick={() => setActiveTab(tab.id as 'overview' | 'brands' | 'competitive' | 'models' | 'queries' | 'forecasts')}
-              className="flex-1"
-            >
-              <Icon className="h-4 w-4 mr-2" />
-              {tab.label}
-            </Button>
-          )
-        })}
-      </div>
-
-      {/* Main Content Based on Active Tab */}
-      {activeTab === 'overview' && analyticsData && (
-        <div className="space-y-6">
-          {/* Enhanced KPIs */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-2">
-                  <CardTitle className="text-sm font-medium text-gray-600">Total Mentions</CardTitle>
-                  <MetricInfoTooltip 
-                    metric="Total Mentions" 
-                    explanation="Absolute count of brand mentions across all queries. Shows the total visibility of your brands in AI responses." 
-                  />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {analyticsData.summary.totalMentions}
-                </div>
-                <p className="text-xs text-gray-500 mt-1">Across all selected brands</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-2">
-                  <CardTitle className="text-sm font-medium text-gray-600">Avg Mention Rate</CardTitle>
-                  <MetricInfoTooltip 
-                    metric="Average Mention Rate" 
-                    explanation="Percentage of queries where your brands appear. Higher is better - shows how consistently your brands are mentioned across searches." 
-                  />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {analyticsData.summary.averageMentionRate.toFixed(1)}%
-                </div>
-                <p className="text-xs text-gray-500 mt-1">Queries where brands appear</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-2">
-                  <CardTitle className="text-sm font-medium text-gray-600">Avg Ranking</CardTitle>
-                  <MetricInfoTooltip 
-                    metric="Average Ranking" 
-                    explanation="Average position when your brands are mentioned. Lower is better - 1st place is best, 10th place is worst." 
-                  />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {analyticsData.summary.averageRank.toFixed(1)}
-                </div>
-                <p className="text-xs text-gray-500 mt-1">Average position when mentioned</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-2">
-                  <CardTitle className="text-sm font-medium text-gray-600">Top Performer</CardTitle>
-                  <MetricInfoTooltip 
-                    metric="Top Performer" 
-                    explanation="The brand with the highest total mentions. Shows which brand is getting the most visibility in AI responses." 
-                  />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-lg font-bold">
-                  {analyticsData.summary.topPerformer?.brand || 'N/A'}
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  {analyticsData.summary.topPerformer?.totalMentions || 0} mentions
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Market Share Chart */}
-          <MarketShareChart
-            data={filteredBrandMetrics.map(brand => ({
-              brand: brand.brand,
-              shareOfVoice: brand.shareOfVoice,
-              totalMentions: brand.totalMentions
-            }))}
-            title="Market Share Distribution"
-            description="Share of voice across all tracked brands"
-          />
-
-          {/* Time Series Chart */}
-          {analyticsData.trends.length > 0 && (
-            <TimeSeriesChart
-              data={analyticsData.trends.map(trend => ({
-                date: trend.period,
-                mentions: trend.data[0]?.mentions || 0,
-                avgRank: trend.data[0]?.avgRank || 0,
-                shareOfVoice: trend.data[0]?.shareOfVoice || 0
-              }))}
-              title="Performance Trends"
-              description="Mention trends over time"
-              showTrend={true}
-              trendData={{
-                trend: analyticsData.trends[0]?.trend || 'stable',
-                percentage: analyticsData.trends[0]?.percentageChange || 0
-              }}
-            />
-          )}
-
-          {/* Competitive Radar Chart */}
-          {filteredBrandMetrics.length > 1 && (
-            <CompetitiveRadarChart
-              data={filteredBrandMetrics.slice(0, 5).map(metric => ({
-                brand: metric.brand,
-                mentionRate: metric.mentionRate,
-                averageRank: metric.averageRank,
-                shareOfVoice: metric.shareOfVoice,
-                topPerformerRate: metric.topPerformerRate,
-                modelCoverage: metric.modelCoverage.length // Convert array length to number
-              }))}
-              title="Competitive Performance Radar"
-              description="Multi-dimensional brand performance comparison"
-            />
-          )}
-        </div>
-      )}
-
-      {activeTab === 'brands' && analyticsData && (
-        <div className="space-y-6">
-          {/* Enhanced Brand Performance Table */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Enhanced Brand Performance</CardTitle>
-              <CardDescription>Comprehensive metrics for all tracked brands</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto relative">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left p-2">Brand</th>
-                      <th className="text-right p-2">
-                        <div className="flex items-center justify-end gap-1">
-                          <span>Mentions</span>
-                          <MetricInfoTooltip 
-                            metric="Mentions" 
-                            explanation="Total number of times this brand was mentioned across all queries. Higher is better - shows brand visibility." 
-                          />
-                        </div>
-                      </th>
-                      <th className="text-right p-2">
-                        <div className="flex items-center justify-end gap-1">
-                          <span>Mention Rate</span>
-                          <MetricInfoTooltip 
-                            metric="Mention Rate" 
-                            explanation="Percentage of queries where this brand appears. Higher is better - shows how consistently the brand is mentioned." 
-                          />
-                        </div>
-                      </th>
-                      <th className="text-right p-2">
-                        <div className="flex items-center justify-end gap-1">
-                          <span>Avg Rank</span>
-                          <MetricInfoTooltip 
-                            metric="Average Rank" 
-                            explanation="Average position when this brand is mentioned. Lower is better - 1st place is best, 10th place is worst." 
-                          />
-                        </div>
-                      </th>
-                      <th className="text-right p-2">
-                        <div className="flex items-center justify-end gap-1">
-                          <span>Share of Voice</span>
-                          <MetricInfoTooltip 
-                            metric="Share of Voice" 
-                            explanation="Percentage of total brand mentions this brand represents. Higher is better - shows market dominance." 
-                          />
-                        </div>
-                      </th>
-                      <th className="text-right p-2">
-                        <div className="flex items-center justify-end gap-1">
-                          <span>Velocity</span>
-                          <MetricInfoTooltip 
-                            metric="Mention Velocity" 
-                            explanation="Mentions per day. Higher is better - shows how quickly the brand is gaining visibility over time." 
-                          />
-                        </div>
-                      </th>
-                      <th className="text-right p-2">
-                        <div className="flex items-center justify-end gap-1">
-                          <span>Stability</span>
-                          <MetricInfoTooltip 
-                            metric="Ranking Stability" 
-                            explanation="Consistency of ranking positions. Higher is better - shows how reliable the brand's performance is." 
-                          />
-                        </div>
-                      </th>
-                      <th className="text-right p-2">
-                        <div className="flex items-center justify-end gap-1">
-                          <span>Trend</span>
-                          <MetricInfoTooltip 
-                            metric="Trend" 
-                            explanation="Performance change over time. Shows if the brand is improving, declining, or staying stable." 
-                          />
-                        </div>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredBrandMetrics.map((brand, index) => (
-                      <tr key={brand.brand} className="border-b hover:bg-gray-50">
-                        <td className="p-2">
-                          <div className="flex items-center gap-2">
-                            <div 
-                              className="w-3 h-3 rounded-full"
-                              style={{ backgroundColor: BRAND_COLORS[index % BRAND_COLORS.length] }}
-                            />
-                            <span className="font-medium">{brand.brand}</span>
-                          </div>
-                        </td>
-                        <td className="text-right p-2 font-medium">{brand.totalMentions}</td>
-                        <td className="text-right p-2">{brand.mentionRate.toFixed(1)}%</td>
-                        <td className="text-right p-2">{brand.averageRank.toFixed(1)}</td>
-                        <td className="text-right p-2">{brand.shareOfVoice.toFixed(1)}%</td>
-                        <td className="text-right p-2">{brand.mentionVelocity.toFixed(1)}</td>
-                        <td className="text-right p-2">{brand.rankingStability.toFixed(1)}%</td>
-                        <td className="text-right p-2">
-                          <div className="flex items-center justify-end gap-1">
-                            {getTrendIcon(brand.trend)}
-                            <span className="text-xs">{brand.trendPercentage.toFixed(1)}%</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Scatter Plot */}
-          <ScatterPlot
-            data={filteredBrandMetrics}
-            title="Mention Rate vs Average Ranking"
-            description="Correlation between brand visibility and ranking performance"
-          />
-        </div>
-      )}
-
-      {activeTab === 'competitive' && analyticsData && (
-        <div className="space-y-6">
-          {/* Competitive Analysis Table */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Head-to-Head Competitive Analysis</CardTitle>
-              <CardDescription>Direct brand comparisons and win rates</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {analyticsData.competitiveAnalysis.length > 0 ? (
-                <div className="overflow-x-auto relative">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left p-2">Matchup</th>
-                        <th className="text-right p-2">
-                          <div className="flex items-center justify-end gap-1">
-                            <span>Win Rate</span>
-                            <MetricInfoTooltip 
-                              metric="Win Rate" 
-                              explanation="Percentage of times the first brand ranks higher than the second brand. Higher is better - shows competitive advantage." 
-                            />
-                          </div>
-                        </th>
-                        <th className="text-right p-2">
-                          <div className="flex items-center justify-end gap-1">
-                            <span>Wins</span>
-                            <MetricInfoTooltip 
-                              metric="Head-to-Head Wins" 
-                              explanation="Number of times the first brand ranked higher than the second brand in direct comparisons." 
-                            />
-                          </div>
-                        </th>
-                        <th className="text-right p-2">
-                          <div className="flex items-center justify-end gap-1">
-                            <span>Comparisons</span>
-                            <MetricInfoTooltip 
-                              metric="Total Comparisons" 
-                              explanation="Total number of queries where both brands appeared and could be compared directly." 
-                            />
-                          </div>
-                        </th>
-                        <th className="text-right p-2">
-                          <div className="flex items-center justify-end gap-1">
-                            <span>Avg Rank Diff</span>
-                            <MetricInfoTooltip 
-                              metric="Average Rank Difference" 
-                              explanation="Average difference in ranking between the two brands. Negative means first brand ranks better, positive means second brand ranks better." 
-                            />
-                          </div>
-                        </th>
-                        <th className="text-right p-2">
-                          <div className="flex items-center justify-end gap-1">
-                            <span>Intensity</span>
-                            <MetricInfoTooltip 
-                              metric="Competitive Intensity" 
-                              explanation="How often these brands compete directly. Higher percentage means they appear together in more queries." 
-                            />
-                          </div>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {analyticsData.competitiveAnalysis.map((comp) => (
-                        <tr key={`${comp.brandA}-${comp.brandB}`} className="border-b hover:bg-gray-50">
-                          <td className="p-2">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">{comp.brandA}</span>
-                              <span className="text-gray-400">vs</span>
-                              <span>{comp.brandB}</span>
-                            </div>
-                          </td>
-                          <td className="text-right p-2">
-                            <Badge 
-                              variant={comp.winRate >= 60 ? "default" : comp.winRate >= 40 ? "secondary" : "destructive"}
-                            >
-                              {comp.winRate.toFixed(1)}%
-                            </Badge>
-                          </td>
-                          <td className="text-right p-2 font-medium">{comp.headToHeadWins}</td>
-                          <td className="text-right p-2">{comp.totalComparisons}</td>
-                          <td className="text-right p-2">
-                            <span className={comp.avgRankDifference < 0 ? "text-green-600" : "text-red-600"}>
-                              {comp.avgRankDifference > 0 ? '+' : ''}{comp.avgRankDifference.toFixed(1)}
-                            </span>
-                          </td>
-                          <td className="text-right p-2">{comp.competitiveIntensity.toFixed(1)}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="text-center py-8 text-gray-500">
-                  <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No competitive data available yet.</p>
-                  <p className="text-sm">Run more queries to see head-to-head brand comparisons.</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {activeTab === 'models' && analyticsData && (
-        <div className="space-y-6">
-          {/* Model Performance Analysis */}
-          <Card>
-            <CardHeader>
-              <CardTitle>AI Model Performance Analysis</CardTitle>
-              <CardDescription>Compare how different AI models perform with your brands</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="p-4 border rounded-lg">
-                  <h4 className="font-semibold mb-2">🤖 ChatGPT</h4>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-1">
-                        <span>Total Queries:</span>
-                        <MetricInfoTooltip 
-                          metric="Total Queries" 
-                          explanation="Number of queries run with this AI model. Shows how much data we have for this model." 
-                        />
-                      </div>
-                      <span className="font-medium">2</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-1">
-                        <span>Avg Mentions:</span>
-                        <MetricInfoTooltip 
-                          metric="Average Mentions" 
-                          explanation="Average number of brand mentions per query for this model. Higher is better - shows model's tendency to mention brands." 
-                        />
-                      </div>
-                      <span className="font-medium">14.0</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-1">
-                        <span>Avg Rank:</span>
-                        <MetricInfoTooltip 
-                          metric="Average Rank" 
-                          explanation="Average ranking position of your brands with this model. Lower is better - shows model's preference for your brands." 
-                        />
-                      </div>
-                      <span className="font-medium">4.2</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-1">
-                        <span>Bias Score:</span>
-                        <MetricInfoTooltip 
-                          metric="Bias Score" 
-                          explanation="How much this model favors or disfavors your brands compared to others. Positive means it favors your brands, negative means it disfavors them." 
-                        />
-                      </div>
-                      <span className="font-medium text-green-600">+0.3</span>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="p-4 border rounded-lg">
-                  <h4 className="font-semibold mb-2">🧠 Claude</h4>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-1">
-                        <span>Total Queries:</span>
-                        <MetricInfoTooltip 
-                          metric="Total Queries" 
-                          explanation="Number of queries run with this AI model. Shows how much data we have for this model." 
-                        />
-                      </div>
-                      <span className="font-medium">0</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-1">
-                        <span>Avg Mentions:</span>
-                        <MetricInfoTooltip 
-                          metric="Average Mentions" 
-                          explanation="Average number of brand mentions per query for this model. Higher is better - shows model's tendency to mention brands." 
-                        />
-                      </div>
-                      <span className="font-medium">-</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-1">
-                        <span>Avg Rank:</span>
-                        <MetricInfoTooltip 
-                          metric="Average Rank" 
-                          explanation="Average ranking position of your brands with this model. Lower is better - shows model's preference for your brands." 
-                        />
-                      </div>
-                      <span className="font-medium">-</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-1">
-                        <span>Bias Score:</span>
-                        <MetricInfoTooltip 
-                          metric="Bias Score" 
-                          explanation="How much this model favors or disfavors your brands compared to others. Positive means it favors your brands, negative means it disfavors them." 
-                        />
-                      </div>
-                      <span className="font-medium text-gray-500">N/A</span>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="p-4 border rounded-lg">
-                  <h4 className="font-semibold mb-2">💎 Gemini</h4>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-1">
-                        <span>Total Queries:</span>
-                        <MetricInfoTooltip 
-                          metric="Total Queries" 
-                          explanation="Number of queries run with this AI model. Shows how much data we have for this model." 
-                        />
-                      </div>
-                      <span className="font-medium">0</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-1">
-                        <span>Avg Mentions:</span>
-                        <MetricInfoTooltip 
-                          metric="Average Mentions" 
-                          explanation="Average number of brand mentions per query for this model. Higher is better - shows model's tendency to mention brands." 
-                        />
-                      </div>
-                      <span className="font-medium">-</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-1">
-                        <span>Avg Rank:</span>
-                        <MetricInfoTooltip 
-                          metric="Average Rank" 
-                          explanation="Average ranking position of your brands with this model. Lower is better - shows model's preference for your brands." 
-                        />
-                      </div>
-                      <span className="font-medium">-</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-1">
-                        <span>Bias Score:</span>
-                        <MetricInfoTooltip 
-                          metric="Bias Score" 
-                          explanation="How much this model favors or disfavors your brands compared to others. Positive means it favors your brands, negative means it disfavors them." 
-                        />
-                      </div>
-                      <span className="font-medium text-gray-500">N/A</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="mt-6">
-                <h4 className="font-semibold mb-3">Model Bias Analysis</h4>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <div className="font-medium">ChatGPT</div>
-                      <div className="text-sm text-gray-600">Slightly favors established brands</div>
-                    </div>
-                    <Badge variant="secondary">Low Bias</Badge>
-                  </div>
-                  
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <div className="font-medium">Claude</div>
-                      <div className="text-sm text-gray-600">No data available yet</div>
-                    </div>
-                    <Badge variant="outline">No Data</Badge>
-                  </div>
-                  
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <div className="font-medium">Gemini</div>
-                      <div className="text-sm text-gray-600">No data available yet</div>
-                    </div>
-                    <Badge variant="outline">No Data</Badge>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Model Consistency Chart */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Model Consistency Analysis</CardTitle>
-              <CardDescription>How consistently each model ranks your brands</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-8 text-gray-500">
-                <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Model consistency data will appear here as you run more queries.</p>
-                <p className="text-sm">Try running the same query across multiple models to see consistency patterns.</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {activeTab === 'queries' && analyticsData && (
-        <div className="space-y-6">
-          {/* Query Effectiveness Analysis */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Query Effectiveness Analysis</CardTitle>
-              <CardDescription>Which queries generate the most brand mentions and best rankings</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="p-4 border rounded-lg">
-                  <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-semibold">&quot;cual es la mejor marca de autos en chile&quot;</h4>
-                    <Badge variant="default">Top Performer</Badge>
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <div className="text-gray-600">Mentions Generated</div>
-                      <div className="font-semibold">17</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-600">Avg Rank</div>
-                      <div className="font-semibold">4.2</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-600">Success Rate</div>
-                      <div className="font-semibold text-green-600">100%</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-600">Query Type</div>
-                      <div className="font-semibold">Comparison</div>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="p-4 border rounded-lg">
-                  <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-semibold">&quot;qué marcas o empresas de reciclaje existen en Pichilemu?&quot;</h4>
-                    <Badge variant="secondary">Good</Badge>
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <div className="text-gray-600">Mentions Generated</div>
-                      <div className="font-semibold">11</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-600">Avg Rank</div>
-                      <div className="font-semibold">5.1</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-600">Success Rate</div>
-                      <div className="font-semibold text-green-600">100%</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-600">Query Type</div>
-                      <div className="font-semibold">Discovery</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Query Optimization Suggestions */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Query Optimization Suggestions</CardTitle>
-              <CardDescription>AI-powered recommendations to improve your query performance</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <div className="flex items-start gap-3">
-                    <Lightbulb className="h-5 w-5 text-blue-600 mt-0.5" />
-                    <div>
-                      <h4 className="font-semibold text-blue-900">Add Geographic Specificity</h4>
-                      <p className="text-blue-800 text-sm mt-1">
-                        Queries with specific locations (like &quot;Santiago&quot;, &quot;Chile&quot;) tend to generate 23% more relevant mentions.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="p-4 bg-green-50 rounded-lg">
-                  <div className="flex items-start gap-3">
-                    <TrendingUp className="h-5 w-5 text-green-600 mt-0.5" />
-                    <div>
-                      <h4 className="font-semibold text-green-900">Use Comparison Keywords</h4>
-                      <p className="text-green-800 text-sm mt-1">
-                        Words like &quot;mejor&quot;, &quot;top&quot;, &quot;comparison&quot; increase mention rates by 15% on average.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="p-4 bg-purple-50 rounded-lg">
-                  <div className="flex items-start gap-3">
-                    <Target className="h-5 w-5 text-purple-600 mt-0.5" />
-                    <div>
-                      <h4 className="font-semibold text-purple-900">Include Industry Terms</h4>
-                      <p className="text-purple-800 text-sm mt-1">
-                        Adding industry-specific terms improves ranking accuracy by 12%.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {activeTab === 'forecasts' && analyticsData && (
-        <div className="space-y-6">
-          {analyticsData.forecasts ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5" />
-                  Performance Forecasts
-                </CardTitle>
-                <CardDescription>
-                  AI-powered predictions for brand performance
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="text-center p-4 bg-blue-50 rounded-lg">
-                    <div className="text-2xl font-bold text-blue-600">
-                      {analyticsData.forecasts.nextPeriod.mentions.toFixed(0)}
-                    </div>
-                    <div className="text-sm text-gray-600">Predicted Mentions</div>
-                  </div>
-                  <div className="text-center p-4 bg-green-50 rounded-lg">
-                    <div className="text-2xl font-bold text-green-600">
-                      {analyticsData.forecasts.nextPeriod.avgRank.toFixed(1)}
-                    </div>
-                    <div className="text-sm text-gray-600">Predicted Avg Rank</div>
-                  </div>
-                  <div className="text-center p-4 bg-purple-50 rounded-lg">
-                    <div className="text-2xl font-bold text-purple-600">
-                      {analyticsData.forecasts.confidence.toFixed(0)}%
-                    </div>
-                    <div className="text-sm text-gray-600">Confidence Level</div>
-                  </div>
-                </div>
-                
-                <div className="mt-6">
-                  <h4 className="font-semibold mb-2">Forecasting Factors:</h4>
-                  <ul className="space-y-1">
-                    {analyticsData.forecasts.factors.map((factor, index) => (
-                      <li key={index} className="flex items-center gap-2 text-sm">
-                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                        {factor}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>Forecasting</CardTitle>
-                <CardDescription>Enable forecasting to see AI-powered predictions</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button onClick={() => {
-                  setShowForecasts(true)
-                  fetchEnhancedAnalyticsData()
-                }}>
-                  Enable Forecasting
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
-
-      {/* Historical Query Results Modal */}
-      {selectedHistoricalQuery && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h2 className="text-xl font-bold">Historical Query Results</h2>
-                  <p className="text-gray-600 mt-1">{selectedHistoricalQuery.prompt}</p>
-                </div>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => setSelectedHistoricalQuery(null)}
-                >
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back
-                </Button>
-              </div>
-              
-              <QueryResults 
-                results={selectedHistoricalQuery.results} 
-                queryText={selectedHistoricalQuery.prompt}
-              />
-            </div>
-          </div>
-        </div>
+      {/* Analytics Charts */}
+      {selectedBrandListId && (
+        <AdvancedCharts 
+          refreshTrigger={refreshTrigger || 0}
+          selectedBrandListId={selectedBrandListId}
+        />
       )}
     </div>
   )

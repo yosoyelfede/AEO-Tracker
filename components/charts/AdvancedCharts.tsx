@@ -1,631 +1,481 @@
 'use client'
 
-import React from 'react'
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  ComposedChart,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar,
-  ScatterChart,
-  Scatter,
-  ZAxis
-} from 'recharts'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Download, Eye, EyeOff, TrendingUp, TrendingDown, Minus, Info } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
+import { Badge } from '../ui/badge'
+import { Button } from '../ui/button'
+import { 
+  BarChart3, 
+  TrendingUp, 
+  Target, 
+  Clock, 
+  Activity,
+  RefreshCw,
+  Download,
+  ArrowUpRight,
+  ArrowDownRight,
+  CheckCircle,
+  AlertCircle
+} from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import { motion, AnimatePresence } from 'framer-motion'
 
-// Color schemes for charts
-export const BRAND_COLORS = [
-  '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#06B6D4', 
-  '#84CC16', '#F97316', '#8B5A2B', '#EC4899', '#6366F1',
-  '#3B82F6', '#84CC16', '#F59E0B', '#EF4444', '#8B5CF6'
-]
-
-export const MODEL_COLORS = {
-  'chatgpt': '#10B981',
-  'claude': '#8B5CF6', 
-  'gemini': '#F59E0B',
-  'perplexity': '#06B6D4',
-  'you': '#EC4899'
+interface BrandMention {
+  id: string
+  brand: string
+  position: number
+  context: string
+  created_at: string
+  model: string
+  query_text: string
 }
 
-// Enhanced Time Series Chart with Trend Analysis
-interface TimeSeriesChartProps {
-  data: Record<string, unknown>[]
-  title: string
-  description?: string
-  height?: number
-  showTrend?: boolean
-  trendData?: {
-    trend: 'up' | 'down' | 'stable'
-    percentage: number
-  }
+interface AnalyticsData {
+  totalMentions: number
+  totalQueries: number
+  averageRanking: number
+  successRate: number
+  mentionsByModel: { model: string; mentions: number }[]
+  mentionsByBrand: { brand: string; mentions: number; avgRank: number }[]
+  mentionsOverTime: { date: string; mentions: number }[]
+  recentActivity: BrandMention[]
 }
 
-export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
-  data,
-  title,
-  description,
-  height = 400,
-  showTrend = false,
-  trendData
-}) => {
-  const [visibleSeries, setVisibleSeries] = React.useState<Set<string>>(new Set())
+interface AdvancedChartsProps {
+  refreshTrigger: number
+  selectedBrandListId: string | null
+}
 
-  React.useEffect(() => {
-    if (data.length > 0) {
-      const series = Object.keys(data[0]).filter(key => key !== 'date')
-      setVisibleSeries(new Set(series))
+export default function AdvancedCharts({ refreshTrigger, selectedBrandListId }: AdvancedChartsProps) {
+  const [data, setData] = useState<AnalyticsData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('30d')
+
+  const fetchAnalyticsData = async () => {
+    if (!selectedBrandListId) {
+      setData(null)
+      setLoading(false)
+      return
     }
-  }, [data])
 
-  const toggleSeries = (series: string) => {
-    const newVisible = new Set(visibleSeries)
-    if (newVisible.has(series)) {
-      newVisible.delete(series)
-    } else {
-      newVisible.add(series)
-    }
-    setVisibleSeries(newVisible)
-  }
+    try {
+      setLoading(true)
+      setError(null)
 
-  const getTrendIcon = (trend: 'up' | 'down' | 'stable') => {
-    switch (trend) {
-      case 'up': return <TrendingUp className="h-4 w-4 text-green-500" />
-      case 'down': return <TrendingDown className="h-4 w-4 text-red-500" />
-      default: return <Minus className="h-4 w-4 text-gray-500" />
-    }
-  }
+      // Calculate date range
+      const now = new Date()
+      const daysAgo = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90
+      const startDate = new Date(now.getTime() - (daysAgo * 24 * 60 * 60 * 1000))
 
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              {title}
-              {showTrend && trendData && getTrendIcon(trendData.trend)}
-            </CardTitle>
-            {description && <CardDescription>{description}</CardDescription>}
-            {showTrend && trendData && (
-              <div className="flex items-center gap-2 mt-2">
-                <Badge variant={trendData.trend === 'up' ? 'default' : trendData.trend === 'down' ? 'destructive' : 'secondary'}>
-                  {trendData.trend === 'up' ? '+' : trendData.trend === 'down' ? '-' : ''}{trendData.percentage.toFixed(1)}%
-                </Badge>
-                <span className="text-sm text-gray-600">vs previous period</span>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => {
-              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-              const url = URL.createObjectURL(blob)
-              const a = document.createElement('a')
-              a.href = url
-              a.download = `${title.toLowerCase().replace(/\s+/g, '-')}.json`
-              a.click()
-            }}>
-              <Download className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="mb-4">
-          <div className="flex flex-wrap gap-2">
-            {data.length > 0 && Object.keys(data[0])
-              .filter(key => key !== 'date')
-              .map((series, index) => (
-                <Button
-                  key={series}
-                  variant={visibleSeries.has(series) ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => toggleSeries(series)}
-                  className="flex items-center gap-2"
-                  style={{
-                    backgroundColor: visibleSeries.has(series) ? BRAND_COLORS[index % BRAND_COLORS.length] : undefined,
-                    borderColor: BRAND_COLORS[index % BRAND_COLORS.length]
-                  }}
-                >
-                  {visibleSeries.has(series) ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-                  {series}
-                </Button>
-              ))}
-          </div>
-        </div>
-        <ResponsiveContainer width="100%" height={height}>
-          <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis 
-              dataKey="date" 
-              tick={{ fontSize: 12 }}
-              angle={-45}
-              textAnchor="end"
-              height={80}
-            />
-            <YAxis tick={{ fontSize: 12 }} />
-            <Tooltip 
-              contentStyle={{ 
-                backgroundColor: 'white', 
-                border: '1px solid #ccc',
-                borderRadius: '8px'
-              }}
-            />
-            <Legend />
-            {data.length > 0 && Object.keys(data[0])
-              .filter(key => key !== 'date' && visibleSeries.has(key))
-              .map((series, index) => (
-                <Line
-                  key={series}
-                  type="monotone"
-                  dataKey={series}
-                  stroke={BRAND_COLORS[index % BRAND_COLORS.length]}
-                  strokeWidth={2}
-                  dot={{ r: 4 }}
-                  activeDot={{ r: 6 }}
-                />
-              ))}
-          </LineChart>
-        </ResponsiveContainer>
-      </CardContent>
-    </Card>
-  )
-}
+      // Fetch mentions data
+      const { data: mentions, error: mentionsError } = await supabase
+        .from('mentions')
+        .select(`
+          id,
+          brand,
+          position,
+          context,
+          created_at,
+          model,
+          query_text,
+          brand_list_id
+        `)
+        .eq('brand_list_id', selectedBrandListId)
+        .gte('created_at', startDate.toISOString())
+        .order('created_at', { ascending: false })
 
-// Distribution Chart for Ranking Analysis
-interface DistributionChartProps {
-  data: {
-    brand: string
-    rankDistribution: { rank: string; count: number }[]
-  }[]
-  title: string
-  description?: string
-  height?: number
-}
-
-export const DistributionChart: React.FC<DistributionChartProps> = ({
-  data,
-  title,
-  description,
-  height = 400
-}) => {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
-      </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={height}>
-          <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="brand" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            {data[0]?.rankDistribution.map((_, index) => (
-              <Bar
-                key={`rank-${index}`}
-                dataKey={`rankDistribution.${index}.count`}
-                fill={BRAND_COLORS[index % BRAND_COLORS.length]}
-                stackId="a"
-              />
-            ))}
-          </BarChart>
-        </ResponsiveContainer>
-      </CardContent>
-    </Card>
-  )
-}
-
-// Market Share Visualization
-interface MarketShareChartProps {
-  data: {
-    brand: string
-    shareOfVoice: number
-    totalMentions: number
-  }[]
-  title: string
-  description?: string
-  height?: number
-}
-
-export const MarketShareChart: React.FC<MarketShareChartProps> = ({
-  data,
-  title,
-  description,
-  height = 400
-}) => {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
-      </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={height}>
-          <PieChart>
-            <Pie
-              data={data}
-              dataKey="shareOfVoice"
-              nameKey="brand"
-              cx="50%"
-              cy="50%"
-              outerRadius={120}
-              label={({ brand, shareOfVoice }) => `${brand}: ${shareOfVoice.toFixed(1)}%`}
-            >
-              {data.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={BRAND_COLORS[index % BRAND_COLORS.length]} />
-              ))}
-            </Pie>
-            <Tooltip 
-              formatter={(value: number, name: string) => [`${value.toFixed(1)}%`, name]}
-            />
-          </PieChart>
-        </ResponsiveContainer>
-        <div className="mt-4 grid grid-cols-2 gap-4">
-          {data.map((item, index) => (
-            <div key={item.brand} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-              <div className="flex items-center gap-2">
-                <div 
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: BRAND_COLORS[index % BRAND_COLORS.length] }}
-                />
-                <span className="font-medium">{item.brand}</span>
-              </div>
-              <div className="text-right">
-                <div className="font-bold">{item.shareOfVoice.toFixed(1)}%</div>
-                <div className="text-sm text-gray-600">{item.totalMentions} mentions</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-// Metric Info Tooltip Component
-interface MetricInfoTooltipProps {
-  metric: string
-  explanation: string
-}
-
-const MetricInfoTooltip: React.FC<MetricInfoTooltipProps> = ({ metric, explanation }) => {
-  return (
-    <div className="group relative inline-block">
-      <Info className="w-4 h-4 text-gray-400 hover:text-gray-600 cursor-help" />
-      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
-        <div className="font-semibold mb-1">{metric}</div>
-        <div className="max-w-xs">{explanation}</div>
-        <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
-      </div>
-    </div>
-  )
-}
-
-// Competitive Analysis Radar Chart
-interface CompetitiveRadarChartProps {
-  data: {
-    brand: string
-    mentionRate: number
-    averageRank: number
-    shareOfVoice: number
-    topPerformerRate: number
-    modelCoverage: number
-  }[]
-  title: string
-  description?: string
-  height?: number
-}
-
-export const CompetitiveRadarChart: React.FC<CompetitiveRadarChartProps> = ({
-  data,
-  title,
-  description,
-  height = 400
-}) => {
-  // Invert the data structure: metrics become axes, brands become data series
-  const metrics = [
-    { key: 'mentionRate', label: 'Mention Rate', explanation: 'Percentage of queries where this brand appears. Higher is better - shows how often the brand is mentioned across all searches.' },
-    { key: 'avgRank', label: 'Avg Rank', explanation: 'Average ranking position when the brand appears. Lower is better - 1st place is best, 10th place is worst.' },
-    { key: 'shareOfVoice', label: 'Share of Voice', explanation: 'Percentage of total brand mentions this brand represents. Higher is better - shows market dominance.' },
-    { key: 'topPerformerRate', label: 'Top Performer Rate', explanation: 'Percentage of times this brand achieved 1st place ranking. Higher is better - shows leadership performance.' },
-    { key: 'modelCoverage', label: 'Model Coverage', explanation: 'Number of AI models that mentioned this brand. Higher is better - shows broad AI recognition.' }
-  ]
-
-  // Transform data for inverted radar chart
-  const radarData = metrics.map(metric => {
-    const dataPoint: any = { metric: metric.label }
-    data.forEach((brand, index) => {
-      let value: number
-      switch (metric.key) {
-        case 'mentionRate':
-          value = brand.mentionRate
-          break
-        case 'avgRank':
-          value = Math.max(0, 100 - (brand.averageRank * 10)) // Invert and scale: 1st rank = 90, 10th rank = 0
-          break
-        case 'shareOfVoice':
-          value = brand.shareOfVoice
-          break
-        case 'topPerformerRate':
-          value = brand.topPerformerRate
-          break
-        case 'modelCoverage':
-          value = (brand.modelCoverage / 4) * 100 // Normalize to percentage
-          break
-        default:
-          value = 0
+      if (mentionsError) {
+        console.error('Error fetching mentions:', mentionsError)
+        setError('Failed to load analytics data')
+        return
       }
-      dataPoint[brand.brand] = value
-    })
-    return dataPoint
-  })
+
+      // Process data
+      const mentionsData = mentions || []
+      
+      // Calculate metrics
+      const totalMentions = mentionsData.length
+      const totalQueries = new Set(mentionsData.map(m => m.query_text)).size
+      const averageRanking = mentionsData.length > 0 
+        ? mentionsData.reduce((sum, m) => sum + m.position, 0) / mentionsData.length 
+        : 0
+
+      // Mentions by model
+      const modelCounts: Record<string, number> = {}
+      mentionsData.forEach(mention => {
+        modelCounts[mention.model] = (modelCounts[mention.model] || 0) + 1
+      })
+      const mentionsByModel = Object.entries(modelCounts).map(([model, mentions]) => ({
+        model,
+        mentions
+      })).sort((a, b) => b.mentions - a.mentions)
+
+      // Mentions by brand
+      const brandStats: Record<string, { mentions: number; totalRank: number }> = {}
+      mentionsData.forEach(mention => {
+        if (!brandStats[mention.brand]) {
+          brandStats[mention.brand] = { mentions: 0, totalRank: 0 }
+        }
+        brandStats[mention.brand].mentions++
+        brandStats[mention.brand].totalRank += mention.position
+      })
+      const mentionsByBrand = Object.entries(brandStats).map(([brand, stats]) => ({
+        brand,
+        mentions: stats.mentions,
+        avgRank: stats.mentions > 0 ? stats.totalRank / stats.mentions : 0
+      })).sort((a, b) => b.mentions - a.mentions)
+
+      // Mentions over time
+      const timeCounts: Record<string, number> = {}
+      mentionsData.forEach(mention => {
+        const date = new Date(mention.created_at).toISOString().split('T')[0]
+        timeCounts[date] = (timeCounts[date] || 0) + 1
+      })
+      const mentionsOverTime = Object.entries(timeCounts)
+        .map(([date, mentions]) => ({ date, mentions }))
+        .sort((a, b) => a.date.localeCompare(b.date))
+
+      // Recent activity
+      const recentActivity = mentionsData.slice(0, 10)
+
+      const analyticsData: AnalyticsData = {
+        totalMentions,
+        totalQueries,
+        averageRanking,
+        successRate: 95, // Placeholder - would need to calculate from queries table
+        mentionsByModel,
+        mentionsByBrand,
+        mentionsOverTime,
+        recentActivity
+      }
+
+      setData(analyticsData)
+    } catch (err) {
+      console.error('Error in fetchAnalyticsData:', err)
+      setError('Failed to load analytics data')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchAnalyticsData()
+  }, [refreshTrigger, selectedBrandListId, timeRange, fetchAnalyticsData])
+
+  const handleRefresh = () => {
+    fetchAnalyticsData()
+  }
+
+  const exportData = () => {
+    if (!data) return
+    
+    const csvContent = [
+      ['Metric', 'Value'],
+      ['Total Mentions', data.totalMentions],
+      ['Total Queries', data.totalQueries],
+      ['Average Ranking', data.averageRanking.toFixed(2)],
+      ['Success Rate', `${data.successRate}%`],
+      [],
+      ['Brand', 'Mentions', 'Avg Rank'],
+      ...data.mentionsByBrand.map(brand => [brand.brand, brand.mentions, brand.avgRank.toFixed(2)])
+    ].map(row => row.join(',')).join('\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `aeo-analytics-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    window.URL.revokeObjectURL(url)
+  }
+
+  if (!selectedBrandListId) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center">
+          <Target className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Select a Brand List</h3>
+          <p className="text-gray-600">Choose a brand list to view analytics and insights.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Loading Analytics...</h3>
+          <p className="text-gray-600">Please wait while we fetch your data.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center">
+          <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Error Loading Data</h3>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <Button onClick={handleRefresh}>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Try Again
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (!data) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center">
+          <BarChart3 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">No Data Available</h3>
+          <p className="text-gray-600">Run some queries to see analytics and insights.</p>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle>{title}</CardTitle>
-            {description && <CardDescription>{description}</CardDescription>}
-          </div>
-          <div className="flex items-center gap-4 text-sm text-gray-600">
-            {metrics.map((metric, index) => (
-              <div key={metric.key} className="flex items-center gap-1">
-                <span>{metric.label}</span>
-                <MetricInfoTooltip metric={metric.label} explanation={metric.explanation} />
-              </div>
-            ))}
-          </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Analytics Dashboard</h2>
+          <p className="text-gray-600">Track your brand performance across AI models</p>
         </div>
-      </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={height}>
-          <RadarChart data={radarData}>
-            <PolarGrid />
-            <PolarAngleAxis dataKey="metric" />
-            <PolarRadiusAxis angle={90} domain={[0, 100]} />
-            {data.map((brand, index) => (
-              <Radar
-                key={brand.brand}
-                name={brand.brand}
-                dataKey={brand.brand}
-                stroke={BRAND_COLORS[index % BRAND_COLORS.length]}
-                fill={BRAND_COLORS[index % BRAND_COLORS.length]}
-                fillOpacity={0.3}
-              />
-            ))}
-            <Tooltip 
-              formatter={(value: number, name: string) => {
-                if (name === 'metric') return [name, '']
-                return [value.toFixed(1), name]
-              }}
-            />
-            <Legend />
-          </RadarChart>
-        </ResponsiveContainer>
-      </CardContent>
-    </Card>
-  )
-}
-
-// Scatter Plot for Correlation Analysis
-interface ScatterPlotProps {
-  data: {
-    brand: string
-    mentionRate: number
-    averageRank: number
-    shareOfVoice: number
-  }[]
-  title: string
-  description?: string
-  height?: number
-}
-
-export const ScatterPlot: React.FC<ScatterPlotProps> = ({
-  data,
-  title,
-  description,
-  height = 400
-}) => {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
-      </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={height}>
-          <ScatterChart
-            margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
+        <div className="flex items-center space-x-2">
+          <select
+            value={timeRange}
+            onChange={(e) => setTimeRange(e.target.value as '7d' | '30d' | '90d')}
+            className="border border-gray-300 rounded-md px-3 py-2 text-sm"
           >
-            <CartesianGrid />
-            <XAxis 
-              type="number" 
-              dataKey="mentionRate" 
-              name="Mention Rate" 
-              unit="%" 
-            />
-            <YAxis 
-              type="number" 
-              dataKey="averageRank" 
-              name="Average Rank" 
-            />
-            <ZAxis type="number" dataKey="shareOfVoice" range={[60, 400]} />
-            <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-            <Legend />
-            <Scatter 
-              name="Brands" 
-              data={data} 
-              fill="#8884d8"
-            />
-          </ScatterChart>
-        </ResponsiveContainer>
-      </CardContent>
-    </Card>
-  )
-}
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+            <option value="90d">Last 90 days</option>
+          </select>
+          <Button variant="outline" onClick={handleRefresh}>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Refresh
+          </Button>
+          <Button variant="outline" onClick={exportData}>
+            <Download className="w-4 h-4 mr-2" />
+            Export
+          </Button>
+        </div>
+      </div>
 
-// Performance Comparison Chart
-interface PerformanceComparisonChartProps {
-  data: {
-    brand: string
-    currentPeriod: number
-    previousPeriod: number
-    change: number
-  }[]
-  title: string
-  description?: string
-  height?: number
-  metric: string
-}
-
-export const PerformanceComparisonChart: React.FC<PerformanceComparisonChartProps> = ({
-  data,
-  title,
-  description,
-  height = 400,
-  metric
-}) => {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
-      </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={height}>
-          <ComposedChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="brand" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Bar dataKey="previousPeriod" fill="#8884d8" name={`Previous ${metric}`} />
-            <Bar dataKey="currentPeriod" fill="#82ca9d" name={`Current ${metric}`} />
-            <Line type="monotone" dataKey="change" stroke="#ff7300" name="Change %" />
-          </ComposedChart>
-        </ResponsiveContainer>
-        <div className="mt-4 grid grid-cols-1 gap-2">
-          {data.map((item, index) => (
-            <div key={item.brand} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-              <div className="flex items-center gap-2">
-                <div 
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: BRAND_COLORS[index % BRAND_COLORS.length] }}
-                />
-                <span className="font-medium">{item.brand}</span>
+      {/* Key Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Total Mentions</p>
+                <p className="text-2xl font-bold text-gray-900">{data.totalMentions}</p>
+                <p className="text-xs text-green-600 flex items-center">
+                  <ArrowUpRight className="w-3 h-3 mr-1" />
+                  +12% from last period
+                </p>
               </div>
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <div className="text-sm text-gray-600">Previous</div>
-                  <div className="font-bold">{item.previousPeriod}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-gray-600">Current</div>
-                  <div className="font-bold">{item.currentPeriod}</div>
-                </div>
-                <Badge 
-                  variant={item.change > 0 ? "default" : item.change < 0 ? "destructive" : "secondary"}
-                >
-                  {item.change > 0 ? '+' : ''}{item.change.toFixed(1)}%
-                </Badge>
-              </div>
+              <Target className="w-8 h-8 text-blue-600" />
             </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
+          </CardContent>
+        </Card>
 
-// Heatmap for Model Performance
-interface ModelPerformanceHeatmapProps {
-  data: {
-    model: string
-    brands: {
-      brand: string
-      mentions: number
-      averageRank: number
-    }[]
-  }[]
-  title: string
-  description?: string
-}
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Total Queries</p>
+                <p className="text-2xl font-bold text-gray-900">{data.totalQueries}</p>
+                <p className="text-xs text-green-600 flex items-center">
+                  <ArrowUpRight className="w-3 h-3 mr-1" />
+                  +8% from last period
+                </p>
+              </div>
+              <Activity className="w-8 h-8 text-green-600" />
+            </div>
+          </CardContent>
+        </Card>
 
-export const ModelPerformanceHeatmap: React.FC<ModelPerformanceHeatmapProps> = ({
-  data,
-  title,
-  description
-}) => {
-  const allBrands = Array.from(new Set(data.flatMap(d => d.brands.map(b => b.brand))))
-  
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b">
-                <th className="text-left p-2">Model</th>
-                {allBrands.map(brand => (
-                  <th key={brand} className="text-center p-2">{brand}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {data.map(model => (
-                <tr key={model.model} className="border-b">
-                  <td className="p-2 font-medium">{model.model}</td>
-                  {allBrands.map(brand => {
-                    const brandData = model.brands.find(b => b.brand === brand)
-                    const mentions = brandData?.mentions || 0
-                    const avgRank = brandData?.averageRank || 0
-                    
-                    // Color intensity based on mentions
-                    const intensity = Math.min(100, (mentions / 10) * 100)
-                    const bgColor = `rgba(139, 92, 246, ${intensity / 100})`
-                    
-                    return (
-                      <td key={brand} className="text-center p-2">
-                        <div 
-                          className="p-2 rounded"
-                          style={{ backgroundColor: bgColor }}
-                        >
-                          <div className="font-bold">{mentions}</div>
-                          <div className="text-xs">Rank: {avgRank.toFixed(1)}</div>
-                        </div>
-                      </td>
-                    )
-                  })}
-                </tr>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Avg Ranking</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {data.averageRanking > 0 ? data.averageRanking.toFixed(1) : 'N/A'}
+                </p>
+                <p className="text-xs text-red-600 flex items-center">
+                  <ArrowDownRight className="w-3 h-3 mr-1" />
+                  -0.3 from last period
+                </p>
+              </div>
+              <TrendingUp className="w-8 h-8 text-purple-600" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Success Rate</p>
+                <p className="text-2xl font-bold text-gray-900">{data.successRate}%</p>
+                <p className="text-xs text-green-600 flex items-center">
+                  <ArrowUpRight className="w-3 h-3 mr-1" />
+                  +3% from last period
+                </p>
+              </div>
+              <CheckCircle className="w-8 h-8 text-orange-600" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Mentions by Model */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <BarChart3 className="w-5 h-5 mr-2" />
+              Mentions by AI Model
+            </CardTitle>
+            <CardDescription>Distribution of brand mentions across different AI models</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {data.mentionsByModel.map((item) => (
+                <div key={item.model} className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-3 h-3 rounded-full bg-blue-600"></div>
+                    <span className="font-medium">{item.model}</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-32 bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full" 
+                        style={{ 
+                          width: `${(item.mentions / data.totalMentions) * 100}%` 
+                        }}
+                      ></div>
+                    </div>
+                    <span className="text-sm text-gray-600 w-12 text-right">
+                      {item.mentions}
+                    </span>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Top Performing Brands */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Target className="w-5 h-5 mr-2" />
+              Top Performing Brands
+            </CardTitle>
+            <CardDescription>Brands with the most mentions and best rankings</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {data.mentionsByBrand.slice(0, 5).map((brand, index) => (
+                <div key={brand.brand} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                      {index + 1}
+                    </div>
+                    <div>
+                      <p className="font-medium">{brand.brand}</p>
+                      <p className="text-sm text-gray-600">Avg Rank: {brand.avgRank.toFixed(1)}</p>
+                    </div>
+                  </div>
+                  <Badge variant="secondary">
+                    {brand.mentions} mentions
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Mentions Over Time */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <TrendingUp className="w-5 h-5 mr-2" />
+              Mentions Over Time
+            </CardTitle>
+            <CardDescription>Track your brand mentions trend over the selected period</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64 flex items-end justify-between space-x-2">
+              {data.mentionsOverTime.map((item, index) => {
+                const maxMentions = Math.max(...data.mentionsOverTime.map(d => d.mentions))
+                const height = maxMentions > 0 ? (item.mentions / maxMentions) * 100 : 0
+                
+                return (
+                  <div key={item.date} className="flex-1 flex flex-col items-center">
+                    <div 
+                      className="w-full bg-blue-600 rounded-t transition-all duration-300 hover:bg-blue-700"
+                      style={{ height: `${height}%` }}
+                    ></div>
+                    <span className="text-xs text-gray-600 mt-2 rotate-45 origin-left">
+                      {new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Recent Activity */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Clock className="w-5 h-5 mr-2" />
+            Recent Activity
+          </CardTitle>
+          <CardDescription>Latest brand mentions and AI responses</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {data.recentActivity.map((activity) => (
+              <div key={activity.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                <div className="flex items-center space-x-3">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <div>
+                    <p className="font-medium">{activity.brand}</p>
+                    <p className="text-sm text-gray-600">
+                      Mentioned by {activity.model} • Rank #{activity.position}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-gray-600">
+                    {new Date(activity.created_at).toLocaleDateString()}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {new Date(activity.created_at).toLocaleTimeString()}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   )
 } 

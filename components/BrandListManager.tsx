@@ -1,704 +1,583 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
+import { useAuth } from './auth-context'
+import { Button } from './ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
+import { Input } from './ui/input'
+import { Badge } from './ui/badge'
 import { 
   Plus, 
+  Trash2, 
   Edit, 
-  Trash, 
-  List, 
-  Tag, 
-  Target,
-  ChevronDown,
-  ChevronRight,
+  Save, 
+  X, 
+  Search,
   CheckCircle,
   AlertCircle,
-  Sparkles,
-  Users,
-  FolderOpen,
-  X,
-  Search,
-  Filter,
-  RefreshCw
+  Target
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { useAuth } from '@/components/auth-context'
 import { motion, AnimatePresence } from 'framer-motion'
+
+interface Brand {
+  id: string
+  name: string
+  created_at: string
+}
 
 interface BrandList {
   id: string
   name: string
-  description: string
+  description?: string
   created_at: string
-  items: BrandListItem[]
-}
-
-interface BrandListItem {
-  id: string
-  brand_name: string
+  brands: Brand[]
 }
 
 interface BrandListManagerProps {
+  onBrandListSelect: (brandListId: string, brandNames: string[]) => void
   selectedBrandListId: string | null
-  onBrandListSelect: (brandListId: string | null, brandNames: string[]) => void
 }
 
-export function BrandListManager({ selectedBrandListId, onBrandListSelect }: BrandListManagerProps) {
+export default function BrandListManager({ onBrandListSelect, selectedBrandListId }: BrandListManagerProps) {
   const { user } = useAuth()
   const [brandLists, setBrandLists] = useState<BrandList[]>([])
   const [loading, setLoading] = useState(true)
-  const [creatingDefault, setCreatingDefault] = useState(false)
-  const [isCreating, setIsCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [editingListId, setEditingListId] = useState<string | null>(null)
   const [newListName, setNewListName] = useState('')
   const [newListDescription, setNewListDescription] = useState('')
-  const [editingList, setEditingList] = useState<string | null>(null)
   const [newBrandName, setNewBrandName] = useState('')
-  const [expandedLists, setExpandedLists] = useState<string[]>([])
-  const [deletingListId, setDeletingListId] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
 
   const fetchBrandLists = useCallback(async () => {
     if (!user) return
-    
-    setLoading(true)
-    const { data, error } = await supabase
-      .from('brand_lists')
-      .select(`
-        id,
-        name,
-        description,
-        created_at,
-        brand_list_items (
-          id,
-          brand_name
-        )
-      `)
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
 
-    if (!error && data) {
-      const lists = data.map(list => ({
+    try {
+      setLoading(true)
+      setError(null)
+
+      const { data: lists, error: listsError } = await supabase
+        .from('brand_lists')
+        .select(`
+          id,
+          name,
+          description,
+          created_at,
+          brand_list_items (
+            id,
+            brand_name,
+            created_at
+          )
+        `)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+
+      if (listsError) {
+        console.error('Error fetching brand lists:', listsError)
+        setError('Failed to load brand lists')
+        return
+      }
+
+      // Transform brand_list_items to brands format for compatibility
+      const transformedLists = (lists || []).map(list => ({
         ...list,
-        items: list.brand_list_items || []
+        brands: (list.brand_list_items || []).map(item => ({
+          id: item.id,
+          name: item.brand_name,
+          created_at: item.created_at
+        }))
       }))
-      setBrandLists(lists)
-      
-      // Auto-select first list if none selected and lists exist
-      if (!selectedBrandListId && lists.length > 0) {
-        const firstList = lists[0]
-        const brandNames = firstList.items.map(item => item.brand_name)
+
+      setBrandLists(transformedLists)
+
+      // Auto-select the first list if none is selected
+      if (transformedLists && transformedLists.length > 0 && !selectedBrandListId) {
+        const firstList = transformedLists[0]
+        const brandNames = firstList.brands?.map(brand => brand.name) || []
         onBrandListSelect(firstList.id, brandNames)
       }
+    } catch (err) {
+      console.error('Error in fetchBrandLists:', err)
+      setError('Failed to load brand lists')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
-  }, [user, selectedBrandListId])
+  }, [user, selectedBrandListId, onBrandListSelect])
 
-  const createDefaultBrandList = useCallback(async () => {
-    if (!user) return
-    
-    setCreatingDefault(true)
+  useEffect(() => {
+    fetchBrandLists()
+  }, [fetchBrandLists])
+
+  const handleCreateList = async () => {
+    if (!user || !newListName.trim()) return
+
     try {
-      const { data, error } = await supabase
+      const { data: newList, error } = await supabase
         .from('brand_lists')
         .insert({
-          user_id: user.id,
-          name: 'My Brands',
-          description: 'Default brand list for tracking'
+          name: newListName.trim(),
+          description: newListDescription.trim() || null,
+          user_id: user.id
         })
         .select()
         .single()
 
-      if (!error && data) {
-        fetchBrandLists()
+      if (error) {
+        console.error('Error creating brand list:', error)
+        setError('Failed to create brand list')
+        return
       }
-    } catch (err) {
-      console.error('Error creating default brand list:', err)
-    } finally {
-      setCreatingDefault(false)
-    }
-  }, [user])
 
-  useEffect(() => {
-    if (user) {
-      fetchBrandLists()
-    }
-  }, [user, selectedBrandListId])
-
-  useEffect(() => {
-    if (!loading && brandLists.length === 0 && user && !creatingDefault) {
-      createDefaultBrandList()
-    }
-  }, [loading, brandLists.length, user, creatingDefault, createDefaultBrandList])
-
-  useEffect(() => {
-    if (selectedBrandListId) {
-      setExpandedLists([selectedBrandListId])
-    }
-  }, [selectedBrandListId])
-
-  const createBrandList = async () => {
-    if (!user || !newListName.trim()) return
-
-    const { error } = await supabase
-      .from('brand_lists')
-      .insert({
-        user_id: user.id,
-        name: newListName.trim(),
-        description: newListDescription.trim()
-      })
-      .select()
-      .single()
-
-    if (!error) {
+      setBrandLists(prev => [newList, ...prev])
       setNewListName('')
       setNewListDescription('')
-      setIsCreating(false)
-      fetchBrandLists()
+      setShowCreateForm(false)
+
+      // Auto-select the newly created list
+      onBrandListSelect(newList.id, [])
+    } catch (err) {
+      console.error('Error in handleCreateList:', err)
+      setError('Failed to create brand list')
     }
   }
 
-  const addBrandToList = async (brandListId: string) => {
+  const handleDeleteList = async (listId: string) => {
+    if (!confirm('Are you sure you want to delete this brand list? This action cannot be undone.')) {
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('brand_lists')
+        .delete()
+        .eq('id', listId)
+
+      if (error) {
+        console.error('Error deleting brand list:', error)
+        setError('Failed to delete brand list')
+        return
+      }
+
+      setBrandLists(prev => prev.filter(list => list.id !== listId))
+
+      // If the deleted list was selected, select the first available list
+      if (selectedBrandListId === listId) {
+        const remainingLists = brandLists.filter(list => list.id !== listId)
+        if (remainingLists.length > 0) {
+          const firstList = remainingLists[0]
+          const brandNames = firstList.brands?.map(brand => brand.name) || []
+          onBrandListSelect(firstList.id, brandNames)
+        } else {
+          onBrandListSelect('', [])
+        }
+      }
+    } catch (err) {
+      console.error('Error in handleDeleteList:', err)
+      setError('Failed to delete brand list')
+    }
+  }
+
+  const handleAddBrand = async (listId: string) => {
     if (!newBrandName.trim()) return
 
-    const { error } = await supabase
-      .from('brand_list_items')
-      .insert({
-        brand_list_id: brandListId,
-        brand_name: newBrandName.trim()
-      })
+    try {
+      const { data: newBrandItem, error } = await supabase
+        .from('brand_list_items')
+        .insert({
+          brand_name: newBrandName.trim(),
+          brand_list_id: listId
+        })
+        .select()
+        .single()
 
-    if (!error) {
-      setNewBrandName('')
-      setEditingList(null)
-      fetchBrandLists()
-    }
-  }
-
-  const removeBrandFromList = async (itemId: string) => {
-    const { error } = await supabase
-      .from('brand_list_items')
-      .delete()
-      .eq('id', itemId)
-
-    if (!error) {
-      fetchBrandLists()
-    }
-  }
-
-  const toggleExpandList = (listId: string) => {
-    setExpandedLists(prev =>
-      prev.includes(listId)
-        ? prev.filter(id => id !== listId)
-        : [...prev, listId]
-    )
-  }
-
-  const deleteBrandList = async (brandListId: string) => {
-    console.log('Attempting to delete brand list:', brandListId)
-    setDeletingListId(brandListId)
-    const { error } = await supabase
-      .from('brand_lists')
-      .delete()
-      .eq('id', brandListId)
-
-    if (error) {
-      alert('Error deleting brand list: ' + error.message)
-      console.error('Error deleting brand list:', error)
-    } else {
-      if (selectedBrandListId === brandListId) {
-        onBrandListSelect(null, [])
+      if (error) {
+        console.error('Error adding brand:', error)
+        setError('Failed to add brand')
+        return
       }
-      setExpandedLists(prev => prev.filter(id => id !== brandListId))
-      fetchBrandLists()
+
+      // Transform the new item to match the brands format
+      const newBrand = {
+        id: newBrandItem.id,
+        name: newBrandItem.brand_name,
+        created_at: newBrandItem.created_at
+      }
+
+      setBrandLists(prev => prev.map(list => 
+        list.id === listId 
+          ? { ...list, brands: [...(list.brands || []), newBrand] }
+          : list
+      ))
+
+      setNewBrandName('')
+
+      // Update selected brands if this list is currently selected
+      if (selectedBrandListId === listId) {
+        const updatedList = brandLists.find(list => list.id === listId)
+        if (updatedList) {
+          const brandNames = [...(updatedList.brands || []), newBrand].map(brand => brand.name)
+          onBrandListSelect(listId, brandNames)
+        }
+      }
+    } catch (err) {
+      console.error('Error in handleAddBrand:', err)
+      setError('Failed to add brand')
     }
-    setDeletingListId(null)
   }
 
-  const handleBrandListSelect = (brandList: BrandList | null) => {
-    if (!brandList) {
-      onBrandListSelect(null, [])
-    } else {
-      const brandNames = brandList.items.map(item => item.brand_name)
-      onBrandListSelect(brandList.id, brandNames)
+  const handleDeleteBrand = async (listId: string, brandId: string) => {
+    try {
+      const { error } = await supabase
+        .from('brand_list_items')
+        .delete()
+        .eq('id', brandId)
+
+      if (error) {
+        console.error('Error deleting brand:', error)
+        setError('Failed to delete brand')
+        return
+      }
+
+      setBrandLists(prev => prev.map(list => 
+        list.id === listId 
+          ? { ...list, brands: (list.brands || []).filter(brand => brand.id !== brandId) }
+          : list
+      ))
+
+      // Update selected brands if this list is currently selected
+      if (selectedBrandListId === listId) {
+        const updatedList = brandLists.find(list => list.id === listId)
+        if (updatedList) {
+          const brandNames = (updatedList.brands || []).filter(brand => brand.id !== brandId).map(brand => brand.name)
+          onBrandListSelect(listId, brandNames)
+        }
+      }
+    } catch (err) {
+      console.error('Error in handleDeleteBrand:', err)
+      setError('Failed to delete brand')
     }
   }
 
-  const selectedList = brandLists.find(list => list.id === selectedBrandListId)
-  const filteredLists = brandLists.filter(list => 
+  const handleUpdateListName = async (listId: string, newName: string) => {
+    if (!newName.trim()) return
+
+    try {
+      const { error } = await supabase
+        .from('brand_lists')
+        .update({ name: newName.trim() })
+        .eq('id', listId)
+
+      if (error) {
+        console.error('Error updating brand list:', error)
+        setError('Failed to update brand list')
+        return
+      }
+
+      setBrandLists(prev => prev.map(list => 
+        list.id === listId 
+          ? { ...list, name: newName.trim() }
+          : list
+      ))
+
+      setEditingListId(null)
+    } catch (err) {
+      console.error('Error in handleUpdateListName:', err)
+      setError('Failed to update brand list')
+    }
+  }
+
+  const filteredLists = brandLists.filter(list =>
     list.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    list.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    list.items.some(item => item.brand_name.toLowerCase().includes(searchTerm.toLowerCase()))
+    list.brands?.some(brand => brand.name.toLowerCase().includes(searchTerm.toLowerCase()))
   )
 
-  const totalBrands = brandLists.reduce((sum, list) => sum + list.items.length, 0)
-
-  if (loading || creatingDefault) {
+  if (loading) {
     return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <Card className="bg-white/80 backdrop-blur-sm border-white/20 shadow-xl">
-          <CardContent className="py-16">
-            <div className="text-center">
-              <motion.div
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ delay: 0.2 }}
-                className="w-20 h-20 bg-gradient-to-r from-slate-100 to-slate-200 rounded-full flex items-center justify-center mx-auto mb-6"
-              >
-                <RefreshCw className="h-10 w-10 text-slate-400 animate-spin" />
-              </motion.div>
-              <h3 className="text-xl font-semibold text-slate-900 mb-2">
-                {creatingDefault ? 'Setting up your brand lists...' : 'Loading brand lists...'}
-              </h3>
-              <p className="text-slate-600">
-                {creatingDefault ? 'Creating your default brand list for tracking' : 'Fetching your brand lists'}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <span className="ml-2 text-gray-600">Loading brand lists...</span>
+          </div>
+        </CardContent>
+      </Card>
     )
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="space-y-6"
-    >
-      {/* Enhanced Header */}
-      <Card className="bg-white/80 backdrop-blur-sm border-white/20 shadow-xl">
-        <CardHeader className="pb-6">
-          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-gradient-to-r from-primary to-primary/80 rounded-xl flex items-center justify-center">
-              <Target className="h-6 w-6 text-white" />
-            </div>
-            <div>
-              <CardTitle className="text-2xl font-bold text-slate-900">Brand Lists</CardTitle>
-              <CardDescription className="text-slate-600">
-                Organize your brands into themed lists for focused AEO tracking
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-      </Card>
-
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <motion.div
-          whileHover={{ scale: 1.02 }}
-          className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl"
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Brand Lists</h2>
+          <p className="text-gray-600">Manage your brand lists for AI tracking</p>
+        </div>
+        <Button 
+          onClick={() => setShowCreateForm(true)}
+          className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
         >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-slate-600 text-sm font-medium">Total Lists</p>
-              <p className="text-3xl font-bold text-slate-900">{brandLists.length}</p>
-            </div>
-            <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
-              <FolderOpen className="h-6 w-6 text-white" />
-            </div>
-          </div>
-        </motion.div>
-
-        <motion.div
-          whileHover={{ scale: 1.02 }}
-          className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-slate-600 text-sm font-medium">Total Brands</p>
-              <p className="text-3xl font-bold text-slate-900">{totalBrands}</p>
-            </div>
-            <div className="w-12 h-12 bg-gradient-to-r from-green-500 to-green-600 rounded-xl flex items-center justify-center">
-              <Tag className="h-6 w-6 text-white" />
-            </div>
-          </div>
-        </motion.div>
-
-        <motion.div
-          whileHover={{ scale: 1.02 }}
-          className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-slate-600 text-sm font-medium">Active List</p>
-              <p className="text-lg font-bold text-slate-900">
-                {selectedList ? selectedList.name : 'None'}
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-purple-600 rounded-xl flex items-center justify-center">
-              <CheckCircle className="h-6 w-6 text-white" />
-            </div>
-          </div>
-        </motion.div>
+          <Plus className="w-4 h-4 mr-2" />
+          New List
+        </Button>
       </div>
 
-      {/* Selected Brand List */}
-      <Card className="bg-white/80 backdrop-blur-sm border-white/20 shadow-xl">
-        <CardHeader className="pb-4">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl flex items-center justify-center">
-              <List className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <CardTitle className="text-xl font-bold text-slate-900">Active Brand List</CardTitle>
-              <CardDescription className="text-slate-600">
-                Select which brand list to use for tracking in your queries
-              </CardDescription>
-            </div>
+      {/* Error Display */}
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="flex items-center">
+            <AlertCircle className="w-5 h-5 text-red-600 mr-2" />
+            <p className="text-red-600">{error}</p>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Brand List Selection */}
-          <div className="space-y-4">
-            <div className="flex flex-wrap gap-3">
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+        </div>
+      )}
+
+      {/* Search */}
+      <div className="relative">
+        <Search className="w-5 h-5 text-gray-400 absolute left-3 top-3" />
+        <Input
+          placeholder="Search brand lists or brands..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="pl-10"
+        />
+      </div>
+
+      {/* Create Form */}
+      <AnimatePresence>
+        {showCreateForm && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="bg-white border border-gray-200 rounded-lg p-6"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Create New Brand List</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowCreateForm(false)}
               >
-                <Button
-                  variant={selectedBrandListId === null ? "default" : "outline"}
-                  size="lg"
-                  onClick={() => handleBrandListSelect(null)}
-                  className={`flex items-center space-x-2 ${
-                    selectedBrandListId === null 
-                      ? 'bg-gradient-to-r from-slate-500 to-slate-600 text-white shadow-lg' 
-                      : 'bg-white/50 hover:bg-white border-slate-200'
-                  }`}
-                >
-                  <X className="h-4 w-4" />
-                  <span>No Tracking</span>
-                </Button>
-              </motion.div>
-              
-              {brandLists.map((list) => (
-                <motion.div
-                  key={list.id}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <Button
-                    variant={selectedBrandListId === list.id ? "default" : "outline"}
-                    size="lg"
-                    onClick={() => handleBrandListSelect(list)}
-                    className={`flex items-center space-x-2 ${
-                      selectedBrandListId === list.id 
-                        ? 'bg-gradient-to-r from-primary to-primary/80 text-white shadow-lg' 
-                        : 'bg-white/50 hover:bg-white border-slate-200'
-                    }`}
-                  >
-                    <Tag className="h-4 w-4" />
-                    <span>{list.name}</span>
-                    <Badge variant="secondary" className="ml-2 bg-white/20 text-white border-0">
-                      {list.items.length}
-                    </Badge>
-                  </Button>
-                </motion.div>
-              ))}
+                <X className="w-4 h-4" />
+              </Button>
             </div>
-
-            {/* Selected List Info */}
-            {selectedList && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200"
-              >
-                <div className="flex items-center space-x-3 mb-3">
-                  <CheckCircle className="h-5 w-5 text-blue-600" />
-                  <h4 className="font-semibold text-blue-900">Currently Tracking: {selectedList.name}</h4>
-                </div>
-                <p className="text-sm text-blue-700 mb-2">
-                  {selectedList.description || 'No description provided'}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {selectedList.items.length > 0 ? (
-                    selectedList.items.map((item) => (
-                      <Badge key={item.id} variant="outline" className="bg-white/80 border-blue-300 text-blue-700">
-                        {item.brand_name}
-                      </Badge>
-                    ))
-                  ) : (
-                    <div className="flex items-center space-x-2 text-amber-700">
-                      <AlertCircle className="h-4 w-4" />
-                      <span className="text-sm font-medium">No brands added yet</span>
-                    </div>
-                  )}
-                </div>
-                {selectedList.items.length === 0 && (
-                  <p className="text-xs mt-3 text-blue-600 bg-blue-100 p-2 rounded-lg">
-                    💡 Add some brands to your list below to start tracking them in AI responses!
-                  </p>
-                )}
-              </motion.div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Create New List */}
-      <Card className="bg-white/80 backdrop-blur-sm border-white/20 shadow-xl">
-        <CardContent className="p-6">
-          <AnimatePresence mode="wait">
-            {!isCreating ? (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-              >
-                <Button
-                  onClick={() => setIsCreating(true)}
-                  variant="outline"
-                  size="lg"
-                  className="w-full h-16 bg-white/50 hover:bg-white border-slate-200 border-dashed"
-                >
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-gradient-to-r from-primary to-primary/80 rounded-lg flex items-center justify-center">
-                      <Plus className="h-4 w-4 text-white" />
-                    </div>
-                    <div className="text-left">
-                      <p className="font-semibold text-slate-900">Create New Brand List</p>
-                      <p className="text-sm text-slate-600">Organize brands into themed lists</p>
-                    </div>
-                  </div>
-                </Button>
-              </motion.div>
-            ) : (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="space-y-4 p-4 bg-gradient-to-r from-slate-50 to-slate-100 rounded-xl border border-slate-200"
-              >
-                <div className="space-y-3">
-                  <Input
-                    type="text"
-                    placeholder="List name (e.g., 'Santiago Restaurants' or 'Chilean Retail Stores')"
-                    value={newListName}
-                    onChange={(e) => setNewListName(e.target.value)}
-                    className="bg-white/80 border-slate-200 focus:border-primary"
-                  />
-                  <Input
-                    type="text"
-                    placeholder="Description (optional)"
-                    value={newListDescription}
-                    onChange={(e) => setNewListDescription(e.target.value)}
-                    className="bg-white/80 border-slate-200 focus:border-primary"
-                  />
-                </div>
-                <div className="flex gap-3">
-                  <Button 
-                    onClick={createBrandList} 
-                    size="lg"
-                    className="flex-1 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create List
-                  </Button>
-                  <Button 
-                    onClick={() => setIsCreating(false)} 
-                    variant="outline" 
-                    size="lg"
-                    className="bg-white/50 hover:bg-white border-slate-200"
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </CardContent>
-      </Card>
-
-      {/* Existing Brand Lists */}
-      {brandLists.length > 0 && (
-        <Card className="bg-white/80 backdrop-blur-sm border-white/20 shadow-xl">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-gradient-to-r from-slate-500 to-slate-600 rounded-xl flex items-center justify-center">
-                  <Users className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <CardTitle className="text-xl font-bold text-slate-900">Your Brand Lists</CardTitle>
-                  <CardDescription className="text-slate-600">
-                    Manage and organize your brand collections
-                  </CardDescription>
-                </div>
-              </div>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  List Name
+                </label>
                 <Input
-                  type="text"
-                  placeholder="Search lists and brands..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 bg-white/50 border-slate-200 focus:border-primary w-64"
+                  placeholder="Enter list name"
+                  value={newListName}
+                  onChange={(e) => setNewListName(e.target.value)}
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Description (Optional)
+                </label>
+                <Input
+                  placeholder="Enter description"
+                  value={newListDescription}
+                  onChange={(e) => setNewListDescription(e.target.value)}
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={handleCreateList} disabled={!newListName.trim()}>
+                  <Save className="w-4 h-4 mr-2" />
+                  Create List
+                </Button>
+                <Button variant="outline" onClick={() => setShowCreateForm(false)}>
+                  Cancel
+                </Button>
+              </div>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <AnimatePresence>
-              {filteredLists.map((list, index) => {
-                const isExpanded = expandedLists.includes(list.id)
-                return (
-                  <motion.div
-                    key={list.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.1 }}
-                    className="border border-slate-200 rounded-xl p-4 bg-white/50 backdrop-blur-sm hover:bg-white/70 transition-all duration-200"
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="flex items-center space-x-3">
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => toggleExpandList(list.id)}
-                          className="w-8 h-8 bg-gradient-to-r from-slate-100 to-slate-200 rounded-lg flex items-center justify-center hover:from-slate-200 hover:to-slate-300 transition-all"
-                        >
-                          {isExpanded ? (
-                            <ChevronDown className="h-4 w-4 text-slate-600" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4 text-slate-600" />
-                          )}
-                        </motion.button>
-                        <div>
-                          <h4 className="font-semibold text-slate-900">{list.name}</h4>
-                          <p className="text-sm text-slate-600">{list.description || 'No description'}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Brand Lists */}
+      <div className="space-y-4">
+        {filteredLists.length === 0 ? (
+          <Card>
+            <CardContent className="p-8 text-center">
+              <Target className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No brand lists found</h3>
+              <p className="text-gray-600 mb-4">
+                {searchTerm ? 'No lists match your search.' : 'Create your first brand list to start tracking.'}
+              </p>
+              {!searchTerm && (
+                <Button onClick={() => setShowCreateForm(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create First List
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          filteredLists.map((list) => (
+            <Card 
+              key={list.id} 
+              className={`cursor-pointer transition-all duration-200 hover:shadow-lg ${
+                selectedBrandListId === list.id 
+                  ? 'ring-2 ring-blue-500 bg-blue-50' 
+                  : 'hover:bg-gray-50'
+              }`}
+              onClick={() => {
+                const brandNames = list.brands?.map(brand => brand.name) || []
+                onBrandListSelect(list.id, brandNames)
+              }}
+            >
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    {selectedBrandListId === list.id && (
+                      <CheckCircle className="w-5 h-5 text-blue-600" />
+                    )}
+                    <div>
+                      {editingListId === list.id ? (
+                        <div className="flex items-center space-x-2">
+                          <Input
+                            value={newListName}
+                            onChange={(e) => setNewListName(e.target.value)}
+                            className="w-48"
+                            autoFocus
+                          />
+                          <Button size="sm" onClick={() => handleUpdateListName(list.id, newListName)}>
+                            <Save className="w-4 h-4" />
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => setEditingListId(null)}
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
                         </div>
-                        <Badge variant="outline" className="bg-white/80 border-slate-300">
-                          {list.items.length} brands
-                        </Badge>
-                      </div>
-                      <div className="flex gap-2">
-                        <motion.div
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                        >
-                          <Button
-                            onClick={() => setEditingList(editingList === list.id ? null : list.id)}
-                            variant="outline"
-                            size="sm"
-                            className="bg-white/50 hover:bg-white border-slate-200"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </motion.div>
-                        <motion.div
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                        >
-                          <Button
-                            onClick={() => deleteBrandList(list.id)}
-                            variant="outline"
-                            size="sm"
-                            disabled={deletingListId === list.id}
-                            className="bg-white/50 hover:bg-white border-slate-200 hover:border-red-300 hover:text-red-600"
-                          >
-                            {deletingListId === list.id ? (
-                              <RefreshCw className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Trash className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </motion.div>
-                      </div>
-                    </div>
-
-                    <AnimatePresence>
-                      {isExpanded && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={{ opacity: 0, height: 0 }}
-                          className="space-y-4"
-                        >
-                          <div className="flex flex-wrap gap-2">
-                            {list.items.length > 0 ? (
-                              list.items.map((item) => (
-                                <motion.div
-                                  key={item.id}
-                                  initial={{ opacity: 0, scale: 0.8 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  whileHover={{ scale: 1.05 }}
-                                >
-                                  <Badge
-                                    variant="outline"
-                                    className="bg-white/80 border-slate-300 text-slate-700 hover:border-red-300 hover:text-red-600 transition-colors"
-                                  >
-                                    <span className="mr-2">{item.brand_name}</span>
-                                    <button
-                                      onClick={() => removeBrandFromList(item.id)}
-                                      className="hover:bg-red-100 rounded-full w-4 h-4 flex items-center justify-center transition-colors"
-                                    >
-                                      <X className="h-3 w-3" />
-                                    </button>
-                                  </Badge>
-                                </motion.div>
-                              ))
-                            ) : (
-                              <div className="flex items-center space-x-2 text-slate-500">
-                                <AlertCircle className="h-4 w-4" />
-                                <span className="text-sm">No brands added yet</span>
-                              </div>
-                            )}
-                          </div>
-
-                          <AnimatePresence>
-                            {editingList === list.id && (
-                              <motion.div
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -10 }}
-                                className="flex gap-3 p-3 bg-gradient-to-r from-slate-50 to-slate-100 rounded-lg border border-slate-200"
-                              >
-                                <Input
-                                  type="text"
-                                  placeholder="Brand name"
-                                  value={newBrandName}
-                                  onChange={(e) => setNewBrandName(e.target.value)}
-                                  className="flex-1 bg-white/80 border-slate-200 focus:border-primary"
-                                  onKeyPress={(e) => e.key === 'Enter' && addBrandToList(list.id)}
-                                />
-                                <Button 
-                                  onClick={() => addBrandToList(list.id)} 
-                                  size="sm"
-                                  className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
-                                >
-                                  <Plus className="h-4 w-4 mr-1" />
-                                  Add
-                                </Button>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </motion.div>
+                      ) : (
+                        <CardTitle className="text-lg">{list.name}</CardTitle>
                       )}
-                    </AnimatePresence>
-                  </motion.div>
-                )
-              })}
-            </AnimatePresence>
-            
-            {filteredLists.length === 0 && searchTerm && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="text-center py-8 text-slate-500"
-              >
-                <Search className="h-12 w-12 mx-auto mb-4 text-slate-300" />
-                <p>No brand lists found matching "{searchTerm}"</p>
-              </motion.div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-    </motion.div>
+                      {list.description && (
+                        <CardDescription>{list.description}</CardDescription>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Badge variant="secondary">
+                      {list.brands?.length || 0} brands
+                    </Badge>
+                    <div className="flex space-x-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setEditingListId(list.id)
+                          setNewListName(list.name)
+                        }}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDeleteList(list.id)
+                        }}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </CardHeader>
+
+              <CardContent>
+                {/* Brands */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium text-gray-900">Brands</h4>
+                    <div className="flex items-center space-x-2">
+                      <Input
+                        placeholder="Add brand name"
+                        value={newBrandName}
+                        onChange={(e) => setNewBrandName(e.target.value)}
+                        className="w-48"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            handleAddBrand(list.id)
+                          }
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleAddBrand(list.id)
+                        }}
+                        disabled={!newBrandName.trim()}
+                      >
+                        <Plus className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {list.brands && list.brands.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {list.brands.map((brand) => (
+                        <Badge
+                          key={brand.id}
+                          variant="outline"
+                          className="flex items-center space-x-1"
+                        >
+                          <span>{brand.name}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDeleteBrand(list.id, brand.id)
+                            }}
+                            className="ml-1 text-red-600 hover:text-red-700"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-sm">No brands added yet. Add some brands to start tracking.</p>
+                  )}
+                </div>
+
+                {/* Stats */}
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div className="text-center">
+                      <div className="text-lg font-semibold text-gray-900">
+                        {list.brands?.length || 0}
+                      </div>
+                      <div className="text-gray-600">Brands</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-lg font-semibold text-gray-900">0</div>
+                      <div className="text-gray-600">Mentions</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-lg font-semibold text-gray-900">0</div>
+                      <div className="text-gray-600">Queries</div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
+    </div>
   )
 } 
