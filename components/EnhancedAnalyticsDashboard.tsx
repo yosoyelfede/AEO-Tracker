@@ -19,50 +19,31 @@ import {
   Minus,
   Crown,
   BarChart3,
-  PieChart as PieChartIcon,
-  Radar as RadarIcon,
-  Info,
-  ThumbsUp,
-  ThumbsDown,
-  Clock,
   Calendar,
   Activity,
-  Eye,
-  EyeOff,
   Lightbulb
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/auth-context'
-import { isAdminEmail } from '@/lib/admin'
 import { QueryResults } from '@/components/QueryResults'
+import type { ApiQueryResult } from '@/types'
 
 // Import enhanced analytics utilities
 import {
-  calculateBrandMetrics,
-  calculateCompetitiveAnalysis,
-  calculateTrends,
-  generateForecasts,
-  createTimeRange,
   exportAnalyticsData,
   type BrandMetrics,
   type CompetitiveMetrics,
   type TrendData,
-  type ForecastData,
-  type QueryData,
-  type TimeRange
+  type ForecastData
 } from '@/lib/analytics'
 
 // Import advanced chart components
 import {
   TimeSeriesChart,
-  DistributionChart,
   MarketShareChart,
   CompetitiveRadarChart,
   ScatterPlot,
-  PerformanceComparisonChart,
-  ModelPerformanceHeatmap,
-  BRAND_COLORS,
-  MODEL_COLORS
+  BRAND_COLORS
 } from '@/components/charts/AdvancedCharts'
 
 // Enhanced Types
@@ -112,23 +93,13 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
   const [selectedHistoricalQuery, setSelectedHistoricalQuery] = useState<{
     id: string
     prompt: string
-    results: any[]
+    results: ApiQueryResult[]
   } | null>(null)
   const [showForecasts, setShowForecasts] = useState(false)
 
-  useEffect(() => {
-    if (user) {
-      fetchBrandLists()
-    }
-  }, [user])
 
-  useEffect(() => {
-    if (selectedBrandListId) {
-      fetchEnhancedAnalyticsData()
-    }
-  }, [selectedBrandListId, timeRange, refreshTrigger])
 
-  const fetchBrandLists = async () => {
+  const fetchBrandLists = useCallback(async () => {
     if (!user) return
     
     setLoading(true)
@@ -160,9 +131,9 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
       }
     }
     setLoading(false)
-  }
+  }, [user, selectedBrandListId])
 
-  const fetchEnhancedAnalyticsData = async () => {
+  const fetchEnhancedAnalyticsData = useCallback(async () => {
     if (!selectedBrandListId || !user) {
       console.log('No brand list selected or user not authenticated')
       return
@@ -206,7 +177,20 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedBrandListId, user, timeRange, showForecasts])
+
+  // useEffect hooks after function declarations
+  useEffect(() => {
+    if (user) {
+      fetchBrandLists()
+    }
+  }, [user, fetchBrandLists])
+
+  useEffect(() => {
+    if (selectedBrandListId) {
+      fetchEnhancedAnalyticsData()
+    }
+  }, [selectedBrandListId, timeRange, refreshTrigger, showForecasts, fetchEnhancedAnalyticsData])
 
   const toggleBrandFilter = (brand: string) => {
     setSelectedBrands(prev => {
@@ -440,7 +424,7 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
               key={tab.id}
               variant={activeTab === tab.id ? 'default' : 'ghost'}
               size="sm"
-              onClick={() => setActiveTab(tab.id as any)}
+                              onClick={() => setActiveTab(tab.id as 'overview' | 'brands' | 'competitive' | 'models' | 'queries' | 'forecasts')}
               className="flex-1"
             >
               <Icon className="h-4 w-4 mr-2" />
@@ -641,7 +625,7 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
                       </tr>
                     </thead>
                     <tbody>
-                      {analyticsData.competitiveAnalysis.map((comp, index) => (
+                      {analyticsData.competitiveAnalysis.map((comp) => (
                         <tr key={`${comp.brandA}-${comp.brandB}`} className="border-b hover:bg-gray-50">
                           <td className="p-2">
                             <div className="flex items-center gap-2">
@@ -819,7 +803,7 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
               <div className="space-y-4">
                 <div className="p-4 border rounded-lg">
                   <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-semibold">"cual es la mejor marca de autos en chile"</h4>
+                    <h4 className="font-semibold">&quot;cual es la mejor marca de autos en chile&quot;</h4>
                     <Badge variant="default">Top Performer</Badge>
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -844,7 +828,7 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
                 
                 <div className="p-4 border rounded-lg">
                   <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-semibold">"qué marcas o empresas de reciclaje existen en Pichilemu?"</h4>
+                    <h4 className="font-semibold">&quot;qué marcas o empresas de reciclaje existen en Pichilemu?&quot;</h4>
                     <Badge variant="secondary">Good</Badge>
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -884,7 +868,7 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
                     <div>
                       <h4 className="font-semibold text-blue-900">Add Geographic Specificity</h4>
                       <p className="text-blue-800 text-sm mt-1">
-                        Queries with specific locations (like "Santiago", "Chile") tend to generate 23% more relevant mentions.
+                        Queries with specific locations (like &quot;Santiago&quot;, &quot;Chile&quot;) tend to generate 23% more relevant mentions.
                       </p>
                     </div>
                   </div>
@@ -896,7 +880,7 @@ export function EnhancedAnalyticsDashboard({ refreshTrigger }: EnhancedAnalytics
                     <div>
                       <h4 className="font-semibold text-green-900">Use Comparison Keywords</h4>
                       <p className="text-green-800 text-sm mt-1">
-                        Words like "mejor", "top", "comparison" increase mention rates by 15% on average.
+                        Words like &quot;mejor&quot;, &quot;top&quot;, &quot;comparison&quot; increase mention rates by 15% on average.
                       </p>
                     </div>
                   </div>

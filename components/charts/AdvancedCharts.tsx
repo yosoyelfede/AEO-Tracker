@@ -16,8 +16,6 @@ import {
   Pie,
   Cell,
   ComposedChart,
-  Area,
-  AreaChart,
   RadarChart,
   PolarGrid,
   PolarAngleAxis,
@@ -49,7 +47,7 @@ export const MODEL_COLORS = {
 
 // Enhanced Time Series Chart with Trend Analysis
 interface TimeSeriesChartProps {
-  data: any[]
+  data: Record<string, unknown>[]
   title: string
   description?: string
   height?: number
@@ -277,7 +275,7 @@ export const MarketShareChart: React.FC<MarketShareChartProps> = ({
               ))}
             </Pie>
             <Tooltip 
-              formatter={(value: any, name: any) => [`${value.toFixed(1)}%`, name]}
+              formatter={(value: number, name: string) => [`${value.toFixed(1)}%`, name]}
             />
           </PieChart>
         </ResponsiveContainer>

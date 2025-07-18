@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
     const queryData: QueryData[] = queries || []
     const brandMetrics = calculateBrandMetrics(queryData, brandNames)
     const competitiveAnalysis = calculateCompetitiveAnalysis(queryData, brandNames)
-    const trends = calculateTrends(queryData, dateRange)
+    const trends = calculateTrends(queryData)
     
     let forecasts = null
     if (includeForecasts) {

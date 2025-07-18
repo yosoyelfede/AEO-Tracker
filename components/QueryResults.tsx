@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Bot, Copy, Calendar, Clock, ArrowLeft, AlertCircle } from 'lucide-react'
+import { ApiQueryResult } from '@/types'
 
 interface QueryResult {
   id: string
@@ -24,7 +25,7 @@ interface QueryError {
 }
 
 interface QueryResultsProps {
-  results: (QueryResult | QueryError)[]
+  results: (QueryResult | QueryError | ApiQueryResult)[]
   queryText: string
   isHistorical?: boolean
   onClearHistorical?: () => void
@@ -119,7 +120,7 @@ export function QueryResults({ results, queryText, isHistorical = false, onClear
   }
 
   // Create a map of results by model for easy lookup
-  const resultsByModel = new Map<string, QueryResult | QueryError>()
+  const resultsByModel = new Map<string, QueryResult | QueryError | ApiQueryResult>()
   results.forEach(result => {
     resultsByModel.set(result.model, result)
   })
@@ -222,12 +223,18 @@ export function QueryResults({ results, queryText, isHistorical = false, onClear
           }
 
           // Handle successful result
-          const successfulResult = result as QueryResult
-          const detectedBrands = successfulResult.mentions.map(m => m.brand)
+          const successfulResult = result as QueryResult | ApiQueryResult
+          const mentions = successfulResult.mentions || []
+          const detectedBrands = mentions.map(m => 
+            'brand' in m ? m.brand : m.brands?.name
+          ).filter((brand): brand is string => Boolean(brand))
           const undetectedBrands = queryBrands.filter(brand => !detectedBrands.includes(brand))
+          const responseText = ('response_text' in successfulResult ? successfulResult.response_text : successfulResult.responseText) || ''
+          const resultId = (successfulResult.id || ('runId' in successfulResult ? successfulResult.runId : undefined) || modelId || 'unknown') as string
+          const createdAt = 'created_at' in successfulResult ? successfulResult.created_at : new Date().toISOString()
           
           return (
-            <Card key={successfulResult.id} className="flex flex-col h-full">
+            <Card key={resultId} className="flex flex-col h-full">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -236,39 +243,42 @@ export function QueryResults({ results, queryText, isHistorical = false, onClear
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="secondary" className={modelConfig.color}>
-                      {successfulResult.mentions.length} mentions
+                      {mentions.length} mentions
                     </Badge>
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => copyToClipboard(successfulResult.response_text, successfulResult.id)}
+                      onClick={() => copyToClipboard(responseText, resultId)}
                       className="h-8 w-8 p-0"
                     >
-                      {copiedId === successfulResult.id ? '✓' : <Copy className="h-4 w-4" />}
+                      {copiedId === resultId ? '✓' : <Copy className="h-4 w-4" />}
                     </Button>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 text-sm text-muted-foreground">
                   <Calendar className="h-4 w-4" />
-                  {formatDate(successfulResult.created_at)}
+                  {formatDate(createdAt)}
                 </div>
               </CardHeader>
               
               <CardContent className="flex-1">
                 {/* Brand Mentions Summary */}
-                {successfulResult.mentions.length > 0 && (
+                {mentions.length > 0 && (
                   <div className="mb-4 p-3 bg-muted rounded-lg">
                     <p className="text-sm font-medium mb-2">Detected Brands:</p>
                     <div className="flex flex-wrap gap-1">
                       {/* Group mentions by brand, order by first appearance */}
                       {(() => {
                         const brandOrder: { brand: string, firstIdx: number, count: number }[] = [];
-                        successfulResult.mentions.forEach((mention, idx) => {
-                          const found = brandOrder.find(b => b.brand === mention.brand);
-                          if (found) {
-                            found.count++;
-                          } else {
-                            brandOrder.push({ brand: mention.brand, firstIdx: idx, count: 1 });
+                        mentions.forEach((mention, idx) => {
+                          const brandName = 'brand' in mention ? mention.brand : mention.brands?.name
+                          if (brandName) {
+                            const found = brandOrder.find(b => b.brand === brandName);
+                            if (found) {
+                              found.count++;
+                            } else {
+                              brandOrder.push({ brand: brandName, firstIdx: idx, count: 1 });
+                            }
                           }
                         });
                         brandOrder.sort((a, b) => a.firstIdx - b.firstIdx);
@@ -286,7 +296,7 @@ export function QueryResults({ results, queryText, isHistorical = false, onClear
                 <div 
                   className="prose prose-sm max-w-none text-sm leading-relaxed"
                   dangerouslySetInnerHTML={{ 
-                    __html: highlightBrands(successfulResult.response_text, detectedBrands) 
+                    __html: highlightBrands(responseText, detectedBrands) 
                   }}
                 />
 
