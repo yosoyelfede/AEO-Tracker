@@ -1,8 +1,11 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
 # Dependencies
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.pnpm-debug.log*
 
 # Runtime data
 pids
@@ -62,6 +65,7 @@ typings/
 
 # next.js build output
 .next
+/out/
 
 # nuxt.js build output
 .nuxt
@@ -124,4 +128,23 @@ build/Release
 
 # Temporary folders
 tmp/
-temp/ 
+temp/
+
+# misc
+*.pem
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# yarn
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
