@@ -93,8 +93,20 @@ export async function GET(request: NextRequest) {
 
     const brandNames = brandListItems.map(item => item.brand_name)
 
-    // Process analytics data
-    const queryData: QueryData[] = queries || []
+    // Transform data to match QueryData type
+    const queryData: QueryData[] = (queries || []).map(query => ({
+      ...query,
+      runs: query.runs?.map(run => ({
+        ...run,
+        mentions: run.mentions?.map(mention => ({
+          ...mention,
+          brands: {
+            name: mention.brands?.[0]?.name || ''
+          }
+        })) || []
+      })) || []
+    }))
+    
     const brandMetrics = calculateBrandMetrics(queryData, brandNames)
     const competitiveAnalysis = calculateCompetitiveAnalysis(queryData, brandNames)
     const trends = calculateTrends(queryData)
