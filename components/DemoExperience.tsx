@@ -7,6 +7,7 @@ import { Search, Users, Store, Coffee, MessageSquare, TrendingUp, MapPin, Bot, S
 
 interface DemoExperienceProps {
   // Will accept preset data in the future
+  [key: string]: unknown;
 }
 
 // Preset brand lists for the demo
